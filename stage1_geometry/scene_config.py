@@ -8,9 +8,19 @@ values in new scripts.
 """
 
 N_DRONES = 20
-AREA_KM = 2.0
-ALTITUDE_SPREAD_M = 50.0
+
+# Scale change 2026-07-22: real requirement from outside this chat, not a
+# tuning choice. Old scene was 2km-wide, ~50m-thick ("pancake"). Now a
+# genuine 5km x 5km x 1km volume -- make_swarm() generates a real 3D
+# distribution across the full height range, not horizontal jitter.
+AREA_KM = 5.0
+HEIGHT_RANGE_M = 1000.0
 SWARM_SEED = 1
+
+# Assumption, not a confirmed spec -- flag to the user if an exact number
+# becomes available. Reference point: Intel Shooting Star light-show drone,
+# 384x384x93mm (~38cm footprint); this is "a little bigger than that."
+DRONE_SIZE_M = 0.5
 
 N_CAMERAS = 6
 LOOK_AT = (0, 0, 100)
@@ -34,9 +44,11 @@ DOME_ELEV_MAX_DEG = 45.0
 IMAGE_SIZE = (1920, 1080)
 FOCAL_PX = 1400.0
 
-# Locked in 2026-07-22: empirically calibrated to ~85% pairwise reachability
-# on this scene (Chen et al. Table I targets ~80-90% for N=55), not derived
-# from an RF link budget. Recalibrate against scene_config's own values if
-# N_DRONES/AREA_KM/ALTITUDE_SPREAD_M ever change -- see
-# stage1_geometry/sweep_dmax.py.
-D_MAX = 1574.0
+# STALE as of the 5km x 5km x 1km scale change (2026-07-22): this value
+# (85% pairwise reachability) was calibrated against the OLD 2km scene and
+# is not meaningful at the new scale. Recalibration against the new
+# make_swarm() distribution is in progress -- see stage1_geometry/sweep_dmax.py
+# and PROGRESS.md. Do not treat this number as current; it's kept here only
+# so nothing else in the codebase breaks on import while recalibration is
+# pending sign-off.
+D_MAX = 1574.0  # TODO: replace once new candidates are reviewed

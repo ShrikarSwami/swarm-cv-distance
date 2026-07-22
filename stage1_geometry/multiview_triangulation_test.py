@@ -30,13 +30,20 @@ rng = np.random.default_rng(42)
 # 1. Scene setup: ground-truth drone positions
 # ---------------------------------------------------------------------------
 
-def make_swarm(n_drones=10, area_km=2.0, altitude_spread_m=50.0, seed=0):
-    """Random drone positions in a horizontal area, with some altitude jitter.
+def make_swarm(n_drones=10, area_km=5.0, height_range_m=1000.0, seed=0):
+    """Random drone positions across a genuine 3D volume: area_km x area_km
+    horizontally, height_range_m vertically (z uniform over [0, height_range_m],
+    i.e. altitude AGL within the volume -- not jitter around a fixed altitude).
     Returns an (n_drones, 3) array in meters, ENU-style local frame.
+
+    Changed 2026-07-22 from a thin horizontal "pancake" (fixed ~100m altitude
+    +/- small jitter) to this full-volume distribution, to match a real
+    5km x 5km x 1km scene requirement rather than the original 2km/~50m-thick
+    placeholder.
     """
     g = np.random.default_rng(seed)
     xy = g.uniform(-area_km * 500, area_km * 500, size=(n_drones, 2))  # meters
-    z = 100.0 + g.uniform(-altitude_spread_m / 2, altitude_spread_m / 2, size=(n_drones, 1))
+    z = g.uniform(0.0, height_range_m, size=(n_drones, 1))
     return np.hstack([xy, z])
 
 
