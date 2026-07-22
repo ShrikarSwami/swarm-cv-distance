@@ -69,6 +69,37 @@ class SwarmScanSettings(PropertyGroup):
         description="Number of drones to generate",
         default=20, min=2, max=500,
     )
+    # --- M2 flight-sim tunables (read live every tick, so sliders take
+    # effect mid-flight) ---
+    neighbor_radius: FloatProperty(
+        name="Neighbor Radius",
+        description=(
+            "Cohesion neighborhood in meters: each drone steers toward the "
+            "average position of drones within this radius (local flocking, "
+            "not whole-swarm centroid). Separation distance scales with it "
+            "(25%), so this slider sets the overall flocking scale"
+        ),
+        default=600.0, min=50.0, max=2500.0,
+    )
+    bound_softness: FloatProperty(
+        name="Bound Softness",
+        description=(
+            "Width in meters of the soft leash at the edges of the "
+            "5km x 5km x 1km volume: turn-back steering ramps up across this "
+            "distance instead of hard-clamping at the boundary"
+        ),
+        default=400.0, min=50.0, max=2000.0,
+    )
+    wander_strength: FloatProperty(
+        name="Wander",
+        description="Random steering perturbation (m/s^2) so motion doesn't look mechanical",
+        default=2.0, min=0.0, max=20.0,
+    )
+    sim_speed: FloatProperty(
+        name="Speed",
+        description="Maximum drone speed in m/s",
+        default=25.0, min=1.0, max=300.0,
+    )
     formation: EnumProperty(
         name="Formation",
         description="Swarm formation preset",
@@ -204,6 +235,11 @@ class SWARM_OT_generate(Operator):
 
         settings = context.scene.swarm_scan
 
+        # A running flight sim holds references to the objects being replaced;
+        # signal it to stop before tearing them down (it exits cleanly on its
+        # next timer tick).
+        context.window_manager.swarm_sim_running = False
+
         # Only RANDOM_CLOUD exists so far; the enum is the extension point
         # for the light-show presets milestone.
         positions = mvt.make_swarm(
@@ -234,6 +270,149 @@ class SWARM_OT_generate(Operator):
         return {"FINISHED"}
 
 
+# --- M2: boids-style flight sim -------------------------------------------
+#
+# Live viewport behavior ONLY: the sim animates the drone Objects' locations
+# through a modal timer; it does not feed back into stage1_geometry's
+# make_swarm or the D_MAX calibration, which stay static-snapshot-based.
+
+_SIM_DT = 1.0 / 30.0        # timer tick, seconds
+_COHESION_GAIN = 0.008      # 1/s^2 -- accel per meter of offset from local mean
+_SEPARATION_GAIN = 6.0      # m/s^2 -- max repulsion accel per crowding neighbor
+_BOUND_GAIN = 10.0          # m/s^2 per unit of normalized leash penetration
+_SEP_FRACTION = 0.25        # separation distance = this fraction of neighbor radius
+
+
+def _scene_bounds():
+    half = scene_config.AREA_KM * 500.0
+    lo = np.array([-half, -half, 0.0])
+    hi = np.array([half, half, scene_config.HEIGHT_RANGE_M])
+    return lo, hi
+
+
+def boids_step(pos, vel, dt, neighbor_radius, bound_softness,
+               wander_strength, max_speed, rng, bounds):
+    """One vectorized flight-sim step. Pure numpy (no bpy) so it can be
+    exercised headlessly; the modal operator is just a thin driver around it.
+    Returns updated (pos, vel).
+    """
+    lo, hi = bounds
+    n = len(pos)
+    not_self = ~np.eye(n, dtype=bool)
+
+    diff = pos[None, :, :] - pos[:, None, :]        # diff[i, j] = pos[j] - pos[i]
+    dist = np.maximum(np.linalg.norm(diff, axis=2), 1e-6)
+
+    # Cohesion: steer toward the LOCAL neighborhood mean, not the swarm
+    # centroid -- drones with no neighbors in radius get no cohesion pull.
+    neighbors = (dist < neighbor_radius) & not_self
+    counts = neighbors.sum(axis=1)
+    has_nb = counts > 0
+    local_mean = np.zeros_like(pos)
+    local_mean[has_nb] = (neighbors @ pos)[has_nb] / counts[has_nb, None]
+    accel = np.where(has_nb[:, None], (local_mean - pos) * _COHESION_GAIN, 0.0)
+
+    # Separation: push away from anyone inside the crowding distance,
+    # weighted up as they get closer, averaged so magnitude stays bounded.
+    sep_dist = neighbor_radius * _SEP_FRACTION
+    crowding = (dist < sep_dist) & not_self
+    n_crowd = np.maximum(crowding.sum(axis=1), 1)
+    away = -diff / dist[:, :, None]                 # unit vector j -> i
+    weight = np.where(crowding, 1.0 - dist / sep_dist, 0.0)
+    accel += _SEPARATION_GAIN * (away * weight[:, :, None]).sum(axis=1) / n_crowd[:, None]
+
+    # Soft leash at the volume edges: steering ramps up across the
+    # bound_softness margin and keeps growing past the boundary -- never a
+    # hard position clamp.
+    m = bound_softness
+    excess_lo = np.clip((lo + m) - pos, 0.0, None) / m
+    excess_hi = np.clip(pos - (hi - m), 0.0, None) / m
+    accel += _BOUND_GAIN * (excess_lo - excess_hi)
+
+    # Wander: small random accel so the motion doesn't look mechanical.
+    accel += rng.normal(0.0, wander_strength, size=pos.shape)
+
+    vel = vel + accel * dt
+    speed = np.maximum(np.linalg.norm(vel, axis=1, keepdims=True), 1e-9)
+    vel = vel * np.minimum(1.0, max_speed / speed)
+    return pos + vel * dt, vel
+
+
+class SWARM_OT_sim_start(Operator):
+    bl_idname = "swarm.sim_start"
+    bl_label = "Start Flight Sim"
+    bl_description = "Fly the swarm live in the viewport (boids-style); Esc or Stop ends it"
+
+    _timer = None
+
+    def execute(self, context):
+        # Reached only when there's no real UI event to invoke with (e.g.
+        # background mode, where modal timers never fire anyway) -- decline
+        # instead of letting Blender log "Invalid operator call".
+        self.report({"WARNING"}, "Flight sim needs an interactive session")
+        return {"CANCELLED"}
+
+    def invoke(self, context, event):
+        if _IMPORT_ERROR is not None:
+            self.report({"ERROR"}, f"stage1_geometry import failed: {_IMPORT_ERROR}")
+            return {"CANCELLED"}
+        coll = bpy.data.collections.get(SWARM_COLLECTION)
+        if coll is None or len(coll.objects) < 2:
+            self.report({"ERROR"}, "Generate a swarm first")
+            return {"CANCELLED"}
+
+        self._objs = sorted(coll.objects, key=lambda o: o.name)
+        self._pos = np.array([obj.location[:] for obj in self._objs])
+        self._rng = np.random.default_rng()
+        directions = self._rng.normal(size=self._pos.shape)
+        directions /= np.maximum(np.linalg.norm(directions, axis=1, keepdims=True), 1e-9)
+        self._vel = directions * (0.5 * context.scene.swarm_scan.sim_speed)
+
+        wm = context.window_manager
+        wm.swarm_sim_running = True
+        self._timer = wm.event_timer_add(_SIM_DT, window=context.window)
+        wm.modal_handler_add(self)
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context, event):
+        wm = context.window_manager
+        if not wm.swarm_sim_running or event.type == "ESC":
+            return self._finish(wm)
+        if event.type == "TIMER":
+            s = context.scene.swarm_scan
+            try:
+                self._pos, self._vel = boids_step(
+                    self._pos, self._vel, _SIM_DT,
+                    s.neighbor_radius, s.bound_softness,
+                    s.wander_strength, s.sim_speed,
+                    self._rng, _scene_bounds(),
+                )
+                for obj, p in zip(self._objs, self._pos):
+                    obj.location = p
+            except ReferenceError:
+                # swarm was deleted/regenerated under us -- stop cleanly
+                return self._finish(wm)
+        # PASS_THROUGH so orbit/pan/zoom stay fully usable mid-flight
+        return {"PASS_THROUGH"}
+
+    def _finish(self, wm):
+        wm.swarm_sim_running = False
+        if self._timer is not None:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+        return {"FINISHED"}
+
+
+class SWARM_OT_sim_stop(Operator):
+    bl_idname = "swarm.sim_stop"
+    bl_label = "Stop Flight Sim"
+    bl_description = "Stop the running flight sim (drones stay where they are)"
+
+    def execute(self, context):
+        context.window_manager.swarm_sim_running = False
+        return {"FINISHED"}
+
+
 class SWARM_PT_panel(Panel):
     bl_label = "Swarm Scan"
     bl_space_type = "VIEW_3D"
@@ -260,17 +439,38 @@ class SWARM_PT_panel(Panel):
         if coll is not None:
             layout.label(text=f"Current swarm: {len(coll.objects)} drones")
 
+        box = layout.box()
+        box.label(text="Flight Sim", icon="FORCE_WIND")
+        box.prop(settings, "neighbor_radius")
+        box.prop(settings, "bound_softness")
+        box.prop(settings, "wander_strength")
+        box.prop(settings, "sim_speed")
+        if context.window_manager.swarm_sim_running:
+            box.operator(SWARM_OT_sim_stop.bl_idname, icon="PAUSE")
+        else:
+            box.operator(SWARM_OT_sim_start.bl_idname, icon="PLAY")
 
-_CLASSES = (SwarmScanSettings, SWARM_OT_generate, SWARM_PT_panel)
+
+_CLASSES = (
+    SwarmScanSettings,
+    SWARM_OT_generate,
+    SWARM_OT_sim_start,
+    SWARM_OT_sim_stop,
+    SWARM_PT_panel,
+)
 
 
 def register():
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.swarm_scan = PointerProperty(type=SwarmScanSettings)
+    # Runtime-only flag (WindowManager props aren't saved into .blend files):
+    # True while the modal sim operator is alive; clearing it stops the sim.
+    bpy.types.WindowManager.swarm_sim_running = bpy.props.BoolProperty(default=False)
 
 
 def unregister():
+    del bpy.types.WindowManager.swarm_sim_running
     del bpy.types.Scene.swarm_scan
     for cls in reversed(_CLASSES):
         bpy.utils.unregister_class(cls)

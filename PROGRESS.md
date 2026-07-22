@@ -59,9 +59,24 @@ below is **not discarded** — its validated pieces are the addon's foundation:
       Interactive orbit/pan/zoom feel: needs a human check — drones are
       plain mesh objects with no handlers, so navigation is Blender-native,
       but confirm before calling M1 fully closed.
-- [ ] **M2 — Lightweight flight sim**: boids-style (stay near neighbors,
-      don't stray past scene bounds, gentle wander) — explicitly not real
-      formation-holding.
+- [x] **M2 — Lightweight flight sim** (2026-07-22): boids-style, running
+      live in the viewport via a modal timer operator (30 Hz) with a
+      Start/Stop button; Esc also stops it, and viewport navigation stays
+      fully usable mid-flight (PASS_THROUGH). Behaviors: cohesion toward
+      the local-neighborhood mean (not swarm centroid), separation inside
+      25% of neighbor radius, soft leash at the 5km x 5km x 1km edges
+      (steering ramps across a margin, never a hard clamp), random wander.
+      Tunables exposed as sliders and read live every tick (take effect
+      mid-flight): Neighbor Radius, Bound Softness, Wander, Speed. Core
+      step is pure numpy (`boids_step`, no bpy) so it's headlessly
+      testable: at 500 drones, 5.7 ms/step vs the 33 ms 30fps budget;
+      after 30 sim-seconds — speed cap held, 0 drones outside bounds,
+      min pairwise 22.8m (no stacking), spread maintained (no collapse).
+      Explicitly viewport-only: no changes to stage1_geometry, which
+      stays static-snapshot-based. Regenerating the swarm auto-stops a
+      running sim. "Looks organic" is numerically proxied
+      (moving/cohesive/bounded/uncollapsed) — final feel check is human,
+      same as M1's navigation check.
 - [ ] **M3 — Camera rig UI**: adjustable count; random dome placement or
       manual place+aim. **The pending D_MAX decision lands here** (candidates
       from the 5km recalibration: 80% -> 3688m, 85% -> 3949m, 90% -> 4358m),
