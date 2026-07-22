@@ -1,0 +1,8 @@
+# Stage 1 (geometry-only, validate before proceeding)
+numpy
+scipy
+matplotlib
+
+# Stage 2 (not installed yet -- pull in once Stage 1 sweep results are reviewed)
+# ultralytics   # YOLOv8 detection, use device="mps" on Apple Silicon
+# bpy           # Blender Python API, install via Blender's bundled interpreter or bpy PyPI wheel
