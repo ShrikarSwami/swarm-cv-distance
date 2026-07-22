@@ -137,6 +137,37 @@ below is **not discarded** — its validated pieces are the addon's foundation:
       swarm was generated with) is reused for scan rendering too, same
       reasoning as M3's rig-coverage validation: true-scale (0.5m) drones are
       subpixel and wouldn't rasterize in the ID pass at all.
+
+      **Closing the loop on the 100% accuracy figure (2026-07-22):** the
+      validation run above used only `SCAN_PIXEL_NOISE_STD_PX = 2.0`, never
+      swept -- checked whether that number holds across Stage 1's original
+      noise range (0.5-8px pixel-noise std) before treating it as a
+      quotable result. Reused 3 real rendered configs (real occlusion, no
+      re-render needed since noise is added post-render) and swept noise
+      with 15 trials/level:
+
+      | noise (px) | reconstructed | overall acc. | near-threshold acc. |
+      |---|---|---|---|
+      | 0.5 | 19.7/20 | 100.0% | 100.0% |
+      | 1.0 | 19.7/20 | 100.0% | 99.9% |
+      | 2.0 (validation default) | 19.7/20 | 99.9% | 99.4% |
+      | 3.0 | 19.7/20 | 99.9% | 99.5% |
+      | 5.0 | 19.7/20 | 99.6% | 98.4% |
+      | 8.0 | 19.7/20 | 99.6% | 98.3% |
+
+      Real result, not a low-noise artifact: near-threshold accuracy shows a
+      genuine, monotonic downward trend (100% -> 98.3%) as noise increases.
+      It does NOT reproduce the 90-98% band from Stage 1's original
+      `sweep.py` runs, though -- those used the old 2km scene, ring cameras,
+      and a different D_MAX, so they aren't apples-to-apples with M4's real
+      5km rig. Two things hold M4's number up even at 8px: (1) reconstructed
+      count stays flat (19.7/20) across all noise levels, because M4
+      determines visibility from real render occlusion, not a noise-coupled
+      synthetic drop probability the way Stage 1 did; (2) the near-threshold
+      band (+/-395m, 10% of D_MAX=3949m) is wide relative to this rig's
+      actual triangulation error even at 8px noise (single-to-low-double-digit
+      meters), so noise rarely pushes a distance estimate across the
+      395m-wide boundary needed to flip an edge.
 - [x] **Tooling** (2026-07-22): double-clickable "Swarm Scanner.app" at
       repo root (minimal unsigned bundle wrapping the dev_load.py launch;
       finds Blender across Steam//Applications/~/Applications, passes extra
