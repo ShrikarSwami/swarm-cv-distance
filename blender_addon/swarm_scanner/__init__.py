@@ -100,6 +100,27 @@ class SwarmScanSettings(PropertyGroup):
         description="Maximum drone speed in m/s",
         default=25.0, min=1.0, max=300.0,
     )
+    # --- M3 camera rig ---
+    camera_count: IntProperty(
+        name="Cameras",
+        description="Number of observing cameras in the rig",
+        default=6, min=2, max=12,
+    )
+    camera_mode: EnumProperty(
+        name="Placement",
+        description="How rig cameras are positioned",
+        items=[
+            ("RANDOM", "Random",
+             "Randomized dome placement around the current swarm's bounding "
+             "volume (jittered azimuths, random elevations); each click "
+             "re-rolls a new arrangement"),
+            ("MANUAL", "Manual",
+             "Evenly spaced dome as a starting layout; move/rotate cameras "
+             "by hand. Each stays auto-aimed at the swarm via a track-to "
+             "constraint until you release it (Toggle Auto-Aim)"),
+        ],
+        default="RANDOM",
+    )
     formation: EnumProperty(
         name="Formation",
         description="Swarm formation preset",
@@ -413,6 +434,175 @@ class SWARM_OT_sim_stop(Operator):
         return {"FINISHED"}
 
 
+# --- M3: camera rig -------------------------------------------------------
+
+RIG_COLLECTION = "Swarm Cameras"
+AIM_EMPTY_NAME = "Swarm Aim"
+_RIG_ELEV_MIN_DEG = 20.0   # below ~20 deg the view goes edge-on (M1-era lesson)
+_RIG_ELEV_MAX_DEG = 50.0   # above ~50 deg cameras crowd the zenith and lose parallax
+_RIG_FIT_MARGIN = 1.15     # slack so the volume isn't wall-to-wall in frame
+_RIG_CLIP_END = 50000.0    # camera-to-far-corner can exceed 10km at this scale
+
+
+def _swarm_snapshot():
+    """Current drone positions (whatever the flight sim has done to them),
+    or None if there's no swarm."""
+    coll = bpy.data.collections.get(SWARM_COLLECTION)
+    if coll is None or len(coll.objects) == 0:
+        return None
+    return np.array([obj.location[:] for obj in sorted(coll.objects, key=lambda o: o.name)])
+
+
+def derive_dome_positions(swarm_pos, n_cameras, randomize, rng=None):
+    """Camera positions on a dome around the swarm's actual bounding volume.
+
+    Standoff is re-derived from scratch for whatever the swarm currently
+    occupies (nothing inherited from the old 2km-scene rig): for each
+    camera's elevation, the slant range is the minimum distance at which the
+    whole volume fits in BOTH the horizontal and vertical FOV (computed from
+    scene_config's real intrinsics), times a fit margin.
+
+    Returns (positions (n,3), center (3,)).
+    """
+    center = 0.5 * (swarm_pos.min(axis=0) + swarm_pos.max(axis=0))
+    r_xy = float(np.linalg.norm((swarm_pos - center)[:, :2], axis=1).max())
+    z_half = float(np.abs(swarm_pos[:, 2] - center[2]).max())
+    r_xy = max(r_xy, 100.0)   # degenerate/tiny swarms still get a sane rig
+    z_half = max(z_half, 50.0)
+
+    w, h = scene_config.IMAGE_SIZE
+    tan_h = (0.5 * w) / scene_config.FOCAL_PX   # tan of half the horizontal FOV
+    tan_v = (0.5 * h) / scene_config.FOCAL_PX
+
+    if randomize:
+        rng = rng or np.random.default_rng()
+        azimuths = (np.arange(n_cameras) * 2 * np.pi / n_cameras
+                    + rng.uniform(0, 2 * np.pi)
+                    + rng.uniform(-0.26, 0.26, n_cameras))   # +/-15 deg jitter
+        elevations = np.radians(rng.uniform(_RIG_ELEV_MIN_DEG, _RIG_ELEV_MAX_DEG, n_cameras))
+    else:
+        azimuths = np.arange(n_cameras) * 2 * np.pi / n_cameras
+        elevations = np.radians(np.linspace(_RIG_ELEV_MIN_DEG, _RIG_ELEV_MAX_DEG, n_cameras))
+
+    positions = []
+    for az, el in zip(azimuths, elevations):
+        d_h = r_xy / tan_h
+        # Apparent half-height of the volume from elevation el: horizontal
+        # depth foreshortened by sin, vertical extent by cos.
+        d_v = (r_xy * np.sin(el) + z_half * np.cos(el)) / tan_v
+        d = _RIG_FIT_MARGIN * max(d_h, d_v)
+        positions.append(center + d * np.array([
+            np.cos(el) * np.cos(az),
+            np.cos(el) * np.sin(az),
+            np.sin(el),
+        ]))
+    return np.array(positions), center
+
+
+def _clear_rig():
+    coll = bpy.data.collections.get(RIG_COLLECTION)
+    if coll is not None:
+        for obj in list(coll.objects):
+            data = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+            if isinstance(data, bpy.types.Camera) and data.users == 0:
+                bpy.data.cameras.remove(data)
+        bpy.data.collections.remove(coll)
+    old_aim = bpy.data.objects.get(AIM_EMPTY_NAME)
+    if old_aim is not None:
+        bpy.data.objects.remove(old_aim, do_unlink=True)
+
+
+class SWARM_OT_place_cameras(Operator):
+    bl_idname = "swarm.place_cameras"
+    bl_label = "Place Cameras"
+    bl_description = "Replace the camera rig around the current swarm (Random re-rolls each click)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        if _IMPORT_ERROR is not None:
+            self.report({"ERROR"}, f"stage1_geometry import failed: {_IMPORT_ERROR}")
+            return {"CANCELLED"}
+        swarm_pos = _swarm_snapshot()
+        if swarm_pos is None:
+            self.report({"ERROR"}, "Generate a swarm first")
+            return {"CANCELLED"}
+
+        settings = context.scene.swarm_scan
+        positions, center = derive_dome_positions(
+            swarm_pos, settings.camera_count,
+            randomize=(settings.camera_mode == "RANDOM"),
+        )
+
+        _clear_rig()
+        coll = bpy.data.collections.new(RIG_COLLECTION)
+        context.scene.collection.children.link(coll)
+
+        aim = bpy.data.objects.new(AIM_EMPTY_NAME, None)
+        aim.empty_display_type = "PLAIN_AXES"
+        aim.empty_display_size = 150.0
+        aim.location = center
+        coll.objects.link(aim)
+
+        for i, pos in enumerate(positions):
+            cam_data = bpy.data.cameras.new(f"rigcam_{i:02d}")
+            cam_data.sensor_fit = "HORIZONTAL"
+            cam_data.sensor_width = 36.0
+            cam_data.lens = (scene_config.FOCAL_PX * cam_data.sensor_width
+                             / scene_config.IMAGE_SIZE[0])
+            cam_data.clip_end = _RIG_CLIP_END
+            cam_data.display_size = 200.0  # meters; default-size icons vanish at 5km scale
+
+            cam_obj = bpy.data.objects.new(f"rigcam_{i:02d}", cam_data)
+            cam_obj.location = pos
+            # Auto-aim at the swarm; survives hand-moving the camera. Release
+            # per-camera via Toggle Auto-Aim to rotate manually.
+            track = cam_obj.constraints.new("TRACK_TO")
+            track.target = aim
+            track.track_axis = "TRACK_NEGATIVE_Z"
+            track.up_axis = "UP_Y"
+            coll.objects.link(cam_obj)
+
+        # Keep scene render settings in lockstep with the rig intrinsics so
+        # any later render (validation, M4 scan) matches Stage 1's math.
+        context.scene.render.resolution_x = scene_config.IMAGE_SIZE[0]
+        context.scene.render.resolution_y = scene_config.IMAGE_SIZE[1]
+        context.scene.render.resolution_percentage = 100
+
+        _extend_viewport_clip()
+        self.report({"INFO"},
+                    f"Placed {settings.camera_count} cameras "
+                    f"({'randomized' if settings.camera_mode == 'RANDOM' else 'even'} dome)")
+        return {"FINISHED"}
+
+
+class SWARM_OT_toggle_aim(Operator):
+    bl_idname = "swarm.toggle_aim"
+    bl_label = "Toggle Auto-Aim (Selected)"
+    bl_description = (
+        "Mute/unmute the track-to constraint on selected rig cameras: muted "
+        "cameras can be rotated by hand, unmuted ones re-aim at the swarm"
+    )
+
+    def execute(self, context):
+        rig = bpy.data.collections.get(RIG_COLLECTION)
+        if rig is None:
+            self.report({"ERROR"}, "No camera rig")
+            return {"CANCELLED"}
+        toggled = 0
+        for obj in context.selected_objects:
+            if obj.name in rig.objects and obj.type == "CAMERA":
+                for con in obj.constraints:
+                    if con.type == "TRACK_TO":
+                        con.mute = not con.mute
+                        toggled += 1
+        if toggled == 0:
+            self.report({"WARNING"}, "Select one or more rig cameras first")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Toggled auto-aim on {toggled} camera(s)")
+        return {"FINISHED"}
+
+
 class SWARM_PT_panel(Panel):
     bl_label = "Swarm Scan"
     bl_space_type = "VIEW_3D"
@@ -450,12 +640,25 @@ class SWARM_PT_panel(Panel):
         else:
             box.operator(SWARM_OT_sim_start.bl_idname, icon="PLAY")
 
+        box = layout.box()
+        box.label(text="Camera Rig", icon="OUTLINER_OB_CAMERA")
+        box.prop(settings, "camera_count")
+        box.prop(settings, "camera_mode")
+        box.operator(SWARM_OT_place_cameras.bl_idname, icon="CON_CAMERASOLVER")
+        rig = bpy.data.collections.get(RIG_COLLECTION)
+        if rig is not None:
+            n_cams = sum(1 for o in rig.objects if o.type == "CAMERA")
+            box.label(text=f"Current rig: {n_cams} cameras")
+            box.operator(SWARM_OT_toggle_aim.bl_idname, icon="ORIENTATION_GIMBAL")
+
 
 _CLASSES = (
     SwarmScanSettings,
     SWARM_OT_generate,
     SWARM_OT_sim_start,
     SWARM_OT_sim_stop,
+    SWARM_OT_place_cameras,
+    SWARM_OT_toggle_aim,
     SWARM_PT_panel,
 )
 

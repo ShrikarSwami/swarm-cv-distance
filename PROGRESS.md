@@ -77,12 +77,29 @@ below is **not discarded** — its validated pieces are the addon's foundation:
       running sim. "Looks organic" is numerically proxied
       (moving/cohesive/bounded/uncollapsed) — final feel check is human,
       same as M1's navigation check.
-- [ ] **M3 — Camera rig UI**: adjustable count; random dome placement or
-      manual place+aim. **The pending D_MAX decision lands here** (candidates
-      from the 5km recalibration: 80% -> 3688m, 85% -> 3949m, 90% -> 4358m),
-      along with re-running the near-threshold edge-accuracy sweep once the
-      rig exists. Per the clip_end lesson: validate rig coverage against
-      real render/ID-pass output, not idealized frustum math alone.
+- [x] **M3 — Camera rig UI** (2026-07-22): panel box with camera-count
+      slider (2-12) and two placement modes. Random: dome around the
+      CURRENT swarm's bounding volume (works on live sim positions, not
+      the generation params) — standoff re-derived from scratch per
+      camera: minimum slant range fitting the whole volume in both FOVs
+      (from scene_config intrinsics) x1.15 margin, elevation 20-50deg
+      (edge-on lesson at the low end, parallax loss at the high end),
+      jittered azimuths; each click re-rolls. Manual: same fit math but
+      even/deterministic as a starting layout for hand-editing; every
+      camera auto-aims at a "Swarm Aim" empty via TRACK_TO, and a Toggle
+      Auto-Aim operator mutes the constraint on selected cameras so they
+      can be rotated by hand. Rig cameras carry the validated intrinsics
+      (36mm sensor-width convention) and clip_end=50km. Coverage
+      validated on REAL ID-pass renders, not frustum math
+      (blender_addon/validate_rig_render.py + validate_rig_report.py,
+      rerunnable): 3 random rolls + manual layout, all 20/20 drones
+      >=2-camera visible at the first-guess derivation (bar: >=18/20).
+      Note: per-camera counts run 10-20/20 because far drones (~10km)
+      drop below ID-pass rasterization even at 20x display scale — first
+      concrete signal of the true-scale detectability concern parked for
+      M4. **D_MAX correction: not needed for M3 after all — it's consumed
+      in M4's adjacency thresholding. D_MAX = 3949m (85% target) locked
+      as provisional for M4.**
 - [ ] **M4 — Scan mode**: run the existing triangulation pipeline against
       current swarm + camera state, visualize the resulting distance map as
       a viewport overlay vs ground truth.
@@ -93,10 +110,12 @@ below is **not discarded** — its validated pieces are the addon's foundation:
   `scene_config.py` is the single source of truth)
 - Drone size: **0.5m footprint, assumption not confirmed spec** (Intel
   Shooting Star reference ~38cm, "a little bigger") — `DRONE_SIZE_M`
-- D_MAX: **not yet locked at this scale** — old 1574m value is stale (was
-  calibrated on the 2km pancake scene); candidates above await decision at M3
-- 6 cameras was the locked count on the old scene; camera count is
-  adjustable in the addon, so M3 should revisit rather than assume
+- D_MAX: **3949m (85% target reachability), locked as provisional** for
+  M4's adjacency thresholding — the old 1574m value was stale (2km scene);
+  scene_config.py still carries the stale value and should be updated when
+  M4 actually consumes it
+- Camera count is adjustable in the addon (2-12, default 6); coverage at
+  6 validated by real renders in M3
 
 ## Lessons learned (keep for reference)
 
