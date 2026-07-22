@@ -102,7 +102,41 @@ below is **not discarded** — its validated pieces are the addon's foundation:
       as provisional for M4.**
 - [ ] **M4 — Scan mode**: run the existing triangulation pipeline against
       current swarm + camera state, visualize the resulting distance map as
-      a viewport overlay vs ground truth.
+      a viewport overlay vs ground truth. **Scope decision (2026-07-22,
+      made ahead of implementation):** detection source is the object-index
+      EXR pass (centroid of each drone's ID-pass footprint), NOT a real
+      YOLO run -- see the subpixel finding below for why. Stage 1's
+      synthetic pixel-noise model layers on top of the centroids to stand
+      in for detector localization error. D_MAX = 3949m (provisional) is
+      consumed here for adjacency thresholding.
+- [x] **Tooling** (2026-07-22): double-clickable "Swarm Scanner.app" at
+      repo root (minimal unsigned bundle wrapping the dev_load.py launch;
+      finds Blender across Steam//Applications/~/Applications, passes extra
+      args through so `.../MacOS/swarm_scanner --background` smoke-tests
+      the same code path) + STARTUP.txt with the manual command as
+      fallback/debugging reference. Both must stay inside the repo
+      (repo-relative imports). Headless smoke test passed; Finder
+      double-click structurally identical but human-confirm on first use.
+
+## Finding: drones are subpixel at true scale from derived standoffs (2026-07-22)
+
+A real optics/range result out of M3's render validation, not a pipeline
+bug: at the FOV-fit standoff distances the 5km x 5km x 1km volume forces
+(~5.5-7km slant, up to ~10km to far drones), a drone rendered with 20x
+display inflation (10m mesh) covers only ~1.4px -- so a TRUE-scale 0.5m
+drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
+1400px-focal intrinsics. Consequences:
+- Real detector-on-render (the original Stage 2 YOLO plan) cannot work at
+  this scene scale + camera spec -- there is nothing to detect. This is
+  why M4 uses ID-pass centroids + synthetic noise instead; the pivot is
+  recorded here deliberately rather than routed around silently.
+- Making real detection viable would need some combination of: longer
+  focal length / narrower FOV (trades against per-camera coverage),
+  higher resolution sensors, closer standoff (trades against whole-swarm
+  framing -- would need cameras that don't each see the whole volume, and
+  therefore a coverage-planning story), or a detector operating on
+  sub-pixel cues. That trade study is future-chat material; the
+  triangulation-accuracy question M4 answers is independent of it.
 
 ## Scene facts (current)
 

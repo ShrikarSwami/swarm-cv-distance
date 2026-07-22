@@ -1,0 +1,38 @@
+swarm-cv-distance -- launching the Swarm Scan addon
+====================================================
+
+Normal launch
+-------------
+Double-click "Swarm Scanner.app" at the repo root. It finds Blender
+(Steam install, /Applications, or ~/Applications, in that order) and opens
+it with the addon loaded. The "Swarm Scan" tab is in the 3D viewport
+sidebar -- press N if the sidebar is hidden.
+
+Manual launch (fallback / debugging)
+------------------------------------
+Same thing the app does, as a plain command:
+
+  "$HOME/Library/Application Support/Steam/steamapps/common/Blender/Blender.app/Contents/MacOS/Blender" \
+      --python "$HOME/Projects/swarm-cv-distance/blender_addon/dev_load.py"
+
+If Blender lives elsewhere, substitute its Contents/MacOS/Blender path.
+(Watch out: ~/Applications/Blender.app can be a Steam launcher stub with no
+real binary inside -- the real Steam install is the path above.)
+
+Headless smoke test (no GUI, verifies the launch path end to end):
+
+  "./Swarm Scanner.app/Contents/MacOS/swarm_scanner" --background
+
+Expected output includes:
+  Swarm Scan addon registered (View3D sidebar > Swarm Scan tab)
+
+Notes
+-----
+- Do NOT install the addon via Blender's Edit > Preferences > Install...
+  button. That copies the file out of the repo and breaks its repo-relative
+  import of stage1_geometry (the panel will show an error if this happens).
+  Load via the app or the command above instead.
+- "Swarm Scanner.app" must stay inside the repo for the same reason; it
+  resolves dev_load.py relative to its own location.
+- The app bundle is unsigned (local dev tool). If macOS ever quarantines
+  it (e.g. after copying from elsewhere):  xattr -d com.apple.quarantine "Swarm Scanner.app"

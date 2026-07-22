@@ -1,0 +1,48 @@
+#!/bin/bash
+# Double-clickable launcher for the Swarm Scan Blender addon.
+#
+# Locates a real Blender install, then opens it with the addon dev-loaded
+# (blender_addon/dev_load.py). Must stay inside the swarm-cv-distance repo:
+# the addon imports stage1_geometry by repo-relative path, and this script
+# finds dev_load.py relative to its own bundle location for the same reason.
+#
+# Extra arguments pass through to Blender, so the exact same code path can
+# be smoke-tested headlessly from a terminal:
+#   "Swarm Scanner.app/Contents/MacOS/swarm_scanner" --background
+#
+# Unsigned on purpose -- local dev tool, minimal bundle, no Gatekeeper story.
+
+set -u
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$HERE/../../.." && pwd)"
+DEV_LOAD="$REPO/blender_addon/dev_load.py"
+
+# Note: ~/Applications/Blender.app may be a Steam launcher stub with no
+# MacOS/Blender binary inside (it is on this machine), which is why each
+# candidate is checked for the actual executable, not just the .app dir.
+CANDIDATES=(
+  "$HOME/Library/Application Support/Steam/steamapps/common/Blender/Blender.app/Contents/MacOS/Blender"
+  "/Applications/Blender.app/Contents/MacOS/Blender"
+  "$HOME/Applications/Blender.app/Contents/MacOS/Blender"
+)
+
+fail() {
+  echo "Swarm Scanner: $1" >&2
+  # Double-click launches have no visible stdout -- surface the error as a dialog.
+  osascript -e "display dialog \"$1\" with title \"Swarm Scanner\" buttons {\"OK\"} default button 1" >/dev/null 2>&1
+  exit 1
+}
+
+BLENDER=""
+for candidate in "${CANDIDATES[@]}"; do
+  if [ -x "$candidate" ]; then
+    BLENDER="$candidate"
+    break
+  fi
+done
+
+[ -n "$BLENDER" ] || fail "Blender not found (checked Steam, /Applications, ~/Applications). Edit Contents/MacOS/swarm_scanner inside this app to add your install path."
+[ -f "$DEV_LOAD" ] || fail "dev_load.py not found at $DEV_LOAD. Keep this app inside the swarm-cv-distance repo -- it can't be moved out on its own."
+
+exec "$BLENDER" --python "$DEV_LOAD" "$@"
