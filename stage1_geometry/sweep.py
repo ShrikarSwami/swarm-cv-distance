@@ -12,17 +12,13 @@ import io
 import numpy as np
 
 import multiview_triangulation_test as mvt
-
-N_DRONES = 20
-RING_RADIUS_M = 1200.0
-RING_HEIGHT_M = 150.0
-D_MAX = 800.0  # placeholder, same as multiview_triangulation_test.py -- not yet validated
+from scene_config import N_DRONES, RING_RADIUS_M, RING_HEIGHT_M, D_MAX, SWARM_SEED
 
 N_CAMERAS_VALUES = [2, 3, 4, 6]
 PIXEL_NOISE_VALUES = [0.5, 1.0, 2.0, 3.0, 5.0, 8.0]
 N_TRIALS = 20  # per (n_cams, noise_std) cell, to average out single-draw variance
 
-drones = mvt.make_swarm(n_drones=N_DRONES, seed=1)
+drones = mvt.make_swarm(n_drones=N_DRONES, seed=SWARM_SEED)
 
 rows = []
 for n_cams in N_CAMERAS_VALUES:

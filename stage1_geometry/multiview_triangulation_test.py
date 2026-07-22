@@ -91,11 +91,42 @@ class Camera:
 def place_ring_of_cameras(n_cameras, radius_m, height_m, look_at=(0, 0, 100)):
     """Place cameras evenly around the swarm, all looking at the swarm centroid.
     This mimics your own drones/observation posts ringing the hostile swarm.
+
+    Note: a flat ring at a height close to the swarm's own altitude views the
+    swarm nearly edge-on. Stage 1's point-projection math has no notion of one
+    drone occluding another, so it can't reveal that this causes severe real
+    self-occlusion -- confirmed against an actual Blender render of this exact
+    rig (2026-07-22): Stage 1 predicted ~15/20 drones in-frame per camera, the
+    real render showed only 2-5. See place_dome_of_cameras for the fix used in
+    Stage 2's actual rig.
     """
     cams = []
     for i in range(n_cameras):
         angle = 2 * np.pi * i / n_cameras
         pos = (radius_m * np.cos(angle), radius_m * np.sin(angle), height_m)
+        cams.append(Camera(pos, look_at))
+    return cams
+
+
+def place_dome_of_cameras(n_cameras, slant_range_m, elev_min_deg, elev_max_deg, look_at=(0, 0, 100)):
+    """Place cameras on a dome around look_at: elevation varies across cameras
+    (not a flat ring), so the rig views the swarm at a steeper angle and
+    self-occlusion between drones is reduced. Slant range (camera-to-look_at
+    distance) is held constant across all cameras so apparent object size in
+    frame doesn't shrink with elevation -- only viewing angle changes.
+    """
+    cams = []
+    for i in range(n_cameras):
+        azimuth = 2 * np.pi * i / n_cameras
+        elev_deg = elev_min_deg + (elev_max_deg - elev_min_deg) * i / max(n_cameras - 1, 1)
+        elev = np.radians(elev_deg)
+        horiz = slant_range_m * np.cos(elev)
+        height_offset = slant_range_m * np.sin(elev)
+        pos = (
+            look_at[0] + horiz * np.cos(azimuth),
+            look_at[1] + horiz * np.sin(azimuth),
+            look_at[2] + height_offset,
+        )
         cams.append(Camera(pos, look_at))
     return cams
 
