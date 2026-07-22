@@ -1,11 +1,11 @@
 # Progress tracker — swarm-cv-distance
 
-Goal for this chat: a working demo loop — N simulated drones flying in a
-3D scene, 5-6 (adjustable) virtual cameras "scan" the swarm, and the
-system estimates inter-drone distances from those camera views, comparable
-against simulation ground truth. Deeper improvements (real detector
-training, correspondence-problem solving, integration with the Linux
-swarm sim) are explicitly deferred to future chats.
+Goal: an interactive Blender addon — a live UI panel driving a navigable 3D
+viewport — where a simulated drone swarm can be generated, flown, "scanned"
+by a configurable camera rig, and the triangulated distance map visualized
+against ground truth. Deeper improvements (real detector training,
+correspondence-problem solving, integration with the Linux swarm sim) remain
+deferred to future chats.
 
 ## Process note (added 2026-07-22, after the clip_end debugging detour)
 
@@ -20,110 +20,89 @@ PROGRESS.md update went missing across two interrupted turns because there
 was no committed checkpoint to recover from. Small, committed, checked-in
 steps fix both problems.
 
-## Scale change (2026-07-22)
+## Scope pivot (2026-07-22): interactive addon, not batch scripts
 
-**New scene bounds: 5km x 5km x 1km (height).** Up from the original
-2km-wide, ~50m-thick placeholder. This is a real requirement from outside
-this chat, not a tuning choice — treat prior calibration built on the old
-scale as invalidated, not as a starting point to nudge.
+The remaining work is a proper Blender addon (`blender_addon/swarm_scanner/`),
+not more offline render-and-analyze scripts. The Stage 1 / Stage 2 batch work
+below is **not discarded** — its validated pieces are the addon's foundation:
 
-**Drone size: assumed ~0.5m (50cm) footprint**, based on "a little bigger
-than viral light-show drones" -- reference point is the Intel Shooting
-Star, a commonly-used light-show drone, at 384x384x93mm (~38cm footprint).
-This is an assumption, not a confirmed spec -- flag to the user if an
-exact number becomes available, and treat as a named constant
-(`DRONE_SIZE_M` or similar) so it's a one-line change if it needs revising.
+- `Camera` class with pinhole projection math, validated against real Blender
+  renders to <1px (`stage1_geometry/multiview_triangulation_test.py`,
+  `stage2_render/validate_camera_alignment.py`)
+- Empirical D_MAX calibration methodology (percentiles of the scene's own
+  pairwise-distance distribution, targeting Chen et al.'s ~80-90%
+  reachability) — `stage1_geometry/sweep_dmax.py`
+- Quadcopter drone asset (primitives, joined mesh) — originally
+  `stage2_render/render_scene.py`, now rebuilt shared-mesh-style in the addon
+- Dome-style camera placement logic (`place_dome_of_cameras`)
+- Triangulation pipeline: `triangulate_point()` / `reconstruct_swarm()` /
+  `evaluate()`, to be reused unchanged by the scan milestone
 
-**What this invalidates (needs redoing, not scaling):**
-- D_MAX = 1574m was calibrated against the *old* 2km-scene distance
-  distribution. Meaningless at 5km scale -- needs full recalibration
-  against the new scene's own pairwise-distance distribution, same
-  empirical method as before (target ~80-90% reachability, matching
-  Chen et al.'s reported range), not a naive linear scale-up.
-- `make_swarm()` (`stage1_geometry/multiview_triangulation_test.py`)
-  currently generates a thin horizontal "pancake" (wide xy spread, ~50m z
-  jitter). A genuine 5km x 5km x 1km volume needs real 3D distribution
-  across the full height range, not the same pancake logic with bigger
-  numbers -- this is a structural function change, not a constant change.
-- The dome camera rig (1201m slant range, 25-45deg elevation spread) was
-  sized for the old 2km scene. Needs re-derivation for 5km scale, and --
-  per the clip_end lesson -- whatever comes out of that math needs to be
-  confirmed against a real Blender render's actual ID-pass coverage
-  before being trusted, not assumed correct because the frustum math
-  says so.
-- Apparent drone pixel size in frame will change with both the larger
-  scene (longer likely camera-to-drone ranges) and the larger assumed
-  drone size (partially offsetting). Needs re-checking once the new
-  rig exists, not assumed to net out to roughly the same ~5px as before.
+## Milestones
 
-## Stage 1 — pure geometry
+- [x] **M1 — Swarm generator + live viewport** (2026-07-22): addon skeleton
+      with bl_info + View3D sidebar panel (`Swarm Scan` tab); drone-count
+      slider (2-500), formation dropdown (Random Cloud only for now,
+      light-show presets later), seed, and a Generate Swarm operator.
+      Positions come from Stage 1's `make_swarm` (imported, not copied —
+      verified identical output in the headless test). Drones are N objects
+      sharing one mesh for cheap instancing. Display Scale property
+      (default 20x) exaggerates mesh size for visibility at 5km scale —
+      positions are always true-scale, flagged in the tooltip so later scan
+      milestones aren't affected. Generate also extends every viewport's
+      clip_end to 20km (the clip_end lesson, applied to the viewport).
+      Headless test covers registration, bounds, position-match vs Stage 1,
+      regeneration-replaces, clean unregister. Load via
+      `blender_addon/dev_load.py` (NOT Blender's Install button — the addon
+      imports stage1_geometry by repo-relative path; the panel reports this
+      if broken). Demo file: `logs/swarm_demo.blend` (gitignored).
+      Interactive orbit/pan/zoom feel: needs a human check — drones are
+      plain mesh objects with no handlers, so navigation is Blender-native,
+      but confirm before calling M1 fully closed.
+- [ ] **M2 — Lightweight flight sim**: boids-style (stay near neighbors,
+      don't stray past scene bounds, gentle wander) — explicitly not real
+      formation-holding.
+- [ ] **M3 — Camera rig UI**: adjustable count; random dome placement or
+      manual place+aim. **The pending D_MAX decision lands here** (candidates
+      from the 5km recalibration: 80% -> 3688m, 85% -> 3949m, 90% -> 4358m),
+      along with re-running the near-threshold edge-accuracy sweep once the
+      rig exists. Per the clip_end lesson: validate rig coverage against
+      real render/ID-pass output, not idealized frustum math alone.
+- [ ] **M4 — Scan mode**: run the existing triangulation pipeline against
+      current swarm + camera state, visualize the resulting distance map as
+      a viewport overlay vs ground truth.
 
-- [x] Synthetic pinhole-camera triangulation harness
-      (`stage1_geometry/multiview_triangulation_test.py`)
-- [x] Camera-count sweep (2/3/4/6 cams x noise levels) -- **methodology
-      still valid, needs re-running against the new scale once
-      `make_swarm` is updated**
-- [ ] **STALE, needs redo at 5km x 5km x 1km scale:** D_MAX empirical
-      calibration (was 1574m / 85% target, valid only for the old 2km
-      scene)
-- [ ] **NEEDS STRUCTURAL CHANGE:** `make_swarm()` -- extend from thin
-      horizontal pancake to genuine 3D volume distribution across the
-      full 1km height
-- [ ] Near-threshold edge-accuracy check -- re-run once D_MAX is
-      recalibrated
-- [ ] Noise model that scales with apparent object pixel size rather
-      than flat px (still not done, still worth doing, now more
-      important given the bigger range variance at 5km scale)
+## Scene facts (current)
 
-## Stage 2 — real renders, real detector
+- Bounds: **5km x 5km x 1km** (real requirement from outside this chat;
+  `scene_config.py` is the single source of truth)
+- Drone size: **0.5m footprint, assumption not confirmed spec** (Intel
+  Shooting Star reference ~38cm, "a little bigger") — `DRONE_SIZE_M`
+- D_MAX: **not yet locked at this scale** — old 1574m value is stale (was
+  calibrated on the 2km pancake scene); candidates above await decision at M3
+- 6 cameras was the locked count on the old scene; camera count is
+  adjustable in the addon, so M3 should revisit rather than assume
 
-- [ ] **STALE, needs redo at new scale:** Blender scene (drone swarm
-      previously matched the old 2km/20-drone/~100m-altitude
-      assumptions)
-- [ ] **NEEDS UPDATE:** drone 3D asset -- resize to ~0.5m assumed
-      footprint (previous asset was quadcopter-silhouette primitives,
-      sized for the old scene; geometry can likely be reused, just
-      needs correct scale)
-- [x] Lesson learned, keep for reference: flat-ring rig at
-      near-swarm-altitude views a wide/thin swarm nearly edge-on and
-      *looks* like severe self-occlusion; in this project's case it
-      was actually two compounding issues -- (1) a genuine geometry
-      problem (2.4deg elevation) and (2) an unrelated Blender
-      `clip_end`=1000m default silently culling geometry beyond that
-      range. Confirmed via: shortfall was identical regardless of
-      render sample count or object size (rules out rendering noise
-      and confirms it's not a size/occlusion effect at the pixel
-      level). **This general validation method (check real ID-pass
-      coverage against idealized frustum-math predictions, and use
-      sample-count/object-size probes to distinguish bug classes) is
-      worth reusing when re-deriving the rig for the new scale** -- the
-      specific rig parameters (1201m slant range, 25-45deg) are not
-      reusable at 5km.
-- [ ] Re-derive camera rig for 5km x 5km x 1km scale (dome-style
-      approach still likely right, parameters need rework), validate
-      against real render coverage, not idealized math alone
-- [ ] Render frames from each camera
-- [ ] Run YOLOv8 (ultralytics, mps device) on renders to get real 2D
-      detections, replacing Stage 1's simulated pixel noise
-- [ ] Correspondence: use Blender's object-index EXR pass as a
-      ground-truth shortcut for this demo (explicitly NOT a
-      real-world-deployable solution -- note in code comments).
-      Render pipeline groundwork from the old scene exists and is
-      largely reusable (RGB PNG + object-index EXR via compositor,
-      Cycles required for the index pass) -- rebuild against new scene,
-      don't assume old renders are usable.
-- [ ] Feed real detections into Stage 1's unchanged
-      `triangulate_point()` / `reconstruct_swarm()` / `evaluate()`
-- [ ] Re-measure real detector noise (vs. Stage 1's assumed flat 8px)
-      and recalibrate D_MAX if the real number differs meaningfully
-- [ ] Demo output: some visual (rendered scene + overlaid estimated vs.
-      true distances, or a simple before/after graph comparison) that
-      makes the result legible at a glance
+## Lessons learned (keep for reference)
+
+- Blender defaults bite at km scale: camera `clip_end` (render) and viewport
+  `clip_end` both default to 1000m and silently cull beyond it — looks
+  exactly like occlusion or missing objects. Both are now handled explicitly.
+- Validation method that caught it: compare real ID-pass coverage against
+  idealized frustum-math predictions, and use sample-count/object-size
+  probes to distinguish bug classes (rendering noise vs geometry vs culling).
+  Reuse this when validating the M3 rig.
+- Stage 1's point-projection math has no occlusion model — a flat ring at
+  near-swarm altitude views a wide/thin swarm nearly edge-on; dome-style
+  elevation spread is the right default.
 
 ## Deferred to future chats
 
+- Light-show-style formation presets (dropdown is the extension point)
 - Correspondence problem for real (non-synthetic-ID) multi-view matching
 - Integration with the Linux CORE+EMANE swarm sim / real distance logs
 - Training or fine-tuning a detector specifically on drone imagery
 - Camera rig placement optimization beyond "does it achieve target
   coverage" (e.g. cost/practicality of an actual observer-platform count)
+- Noise model that scales with apparent object pixel size rather than flat
+  px (from old Stage 1 backlog; still worth doing, matters more at 5km)
