@@ -3,6 +3,12 @@ numpy
 scipy
 matplotlib
 
+# Addon M3/M4 (rig-coverage validation + scan pipeline): reading back the
+# object-index EXR passes Blender renders. Blender's own bpy.data.images.load()
+# can't read this project's custom-named "id_" multilayer pass, so
+# blender_addon/scan_worker.py reads it directly via this package instead.
+OpenEXR
+
 # Stage 2 (not installed yet -- pull in once Stage 1 sweep results are reviewed)
 # ultralytics   # YOLOv8 detection, use device="mps" on Apple Silicon
 # bpy           # Blender Python API, install via Blender's bundled interpreter or bpy PyPI wheel

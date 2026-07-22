@@ -44,11 +44,17 @@ DOME_ELEV_MAX_DEG = 45.0
 IMAGE_SIZE = (1920, 1080)
 FOCAL_PX = 1400.0
 
-# STALE as of the 5km x 5km x 1km scale change (2026-07-22): this value
-# (85% pairwise reachability) was calibrated against the OLD 2km scene and
-# is not meaningful at the new scale. Recalibration against the new
-# make_swarm() distribution is in progress -- see stage1_geometry/sweep_dmax.py
-# and PROGRESS.md. Do not treat this number as current; it's kept here only
-# so nothing else in the codebase breaks on import while recalibration is
-# pending sign-off.
-D_MAX = 1574.0  # TODO: replace once new candidates are reviewed
+# Recalibrated against the 5km x 5km x 1km make_swarm() distribution
+# (stage1_geometry/sweep_dmax.py), 85% pairwise-reachability target per
+# Chen et al. Locked as provisional for M4's adjacency thresholding
+# (2026-07-22) -- the old 1574m value was stale (2km scene).
+D_MAX = 3949.0
+
+# M4 scan pipeline defaults: Stage 1's synthetic pixel-noise model, layered
+# on top of real ID-pass centroids (see PROGRESS.md's subpixel finding for
+# why detection comes from ID-pass footprints rather than a real detector).
+SCAN_PIXEL_NOISE_STD_PX = 2.0
+# "Near-threshold" accuracy band for the scan HUD: pairs whose true distance
+# falls within this fraction of D_MAX on either side -- the hardest,
+# decision-boundary case for the adjacency graph the GA/PSO track consumes.
+SCAN_NEAR_THRESHOLD_FRAC = 0.10

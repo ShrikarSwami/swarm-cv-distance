@@ -30,13 +30,19 @@ bl_info = {
     "category": "Object",
 }
 
+import json
 import os
+import shutil
+import subprocess
 import sys
 
+import blf
 import bpy
+import gpu
 import numpy as np
 from bpy.props import EnumProperty, FloatProperty, IntProperty, PointerProperty
 from bpy.types import Operator, Panel, PropertyGroup
+from gpu_extras.batch import batch_for_shader
 
 # --- Repo-relative import of Stage 1's shared config + swarm distribution ---
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -146,6 +152,17 @@ class SwarmScanSettings(PropertyGroup):
             "so later scan/triangulation milestones are unaffected"
         ),
         default=20.0, min=1.0, max=500.0,
+    )
+    # --- M4 scan ---
+    scan_seed: IntProperty(
+        name="Scan Noise Seed",
+        description=(
+            "Random seed for the synthetic pixel-noise layered on top of real "
+            "ID-pass centroids (same seed = same noise draw). Detection "
+            "availability itself (which camera sees which drone) comes from "
+            "the real render, not this seed"
+        ),
+        default=1, min=0,
     )
 
 
@@ -603,6 +620,239 @@ class SWARM_OT_toggle_aim(Operator):
         return {"FINISHED"}
 
 
+# --- M4: scan pipeline + viewport overlay ----------------------------------
+#
+# Detection source is the object-index EXR pass (centroid of each drone's
+# ID-pass footprint from a REAL Cycles render, so occlusion/out-of-frame is
+# whatever the render actually shows -- not frustum math), with Stage 1's
+# synthetic pixel-noise model layered on top of those centroids to stand in
+# for real detector localization error (see PROGRESS.md's subpixel finding
+# for why an actual YOLO run isn't viable at this scene scale). Triangulation
+# reuses stage1_geometry's triangulate_point()/reconstruct_swarm() unchanged.
+#
+# The EXR readback runs in a subprocess against the project's venv, not
+# Blender's own Python: bpy.data.images.load() was tried first and could not
+# read this project's custom-named "id_" multilayer pass (loads as a 0x0
+# TARGA-typed image) -- OpenEXR direct reads, already validated for this
+# exact pass by validate_rig_report.py, are the reliable path.
+
+_SCAN_WORKER_PATH = os.path.join(_REPO_ROOT, "blender_addon", "scan_worker.py")
+_SCAN_VENV_PYTHON = os.path.join(_REPO_ROOT, "venv", "bin", "python")
+_SCAN_TMP_DIR = os.path.join(_REPO_ROOT, "logs", "scan_tmp")
+_SCAN_SAMPLES = 8  # Cycles samples for ID-pass renders; matches M3's validated rig-coverage renders
+
+_SCAN_EDGE_COLOR_CORRECT = (0.15, 0.85, 0.2, 0.9)
+_SCAN_EDGE_COLOR_WRONG = (0.9, 0.15, 0.15, 0.9)
+
+# Populated by SWARM_OT_scan, read by the draw handlers and the panel. Plain
+# module state (not a bpy property) -- the result is a nested structure
+# (per-drone positions, an edge list) that doesn't map cleanly onto Blender's
+# ID-property system and is only ever produced/consumed within this session.
+_LAST_SCAN = None
+_draw_handle_3d = None
+_draw_handle_2d = None
+
+
+def _camera_pose_P(cam_obj, image_size, focal_px):
+    """Projection matrix from the camera's ACTUAL rendered world transform,
+    not a re-derived look-at target -- correct even for hand-rotated
+    manual-mode cameras with auto-aim muted. Mirrors mvt.Camera's
+    convention (z-forward, x-right, y-down) but reads real world axes.
+    """
+    position = np.array(cam_obj.matrix_world.translation[:], dtype=float)
+    m = cam_obj.matrix_world.to_3x3()
+    right = np.array(m.col[0][:]); right /= np.linalg.norm(right)
+    up = np.array(m.col[1][:]); up /= np.linalg.norm(up)
+    forward = -np.array(m.col[2][:]); forward /= np.linalg.norm(forward)
+    R = np.vstack([right, -up, forward])
+    cx, cy = image_size[0] / 2, image_size[1] / 2
+    K = np.array([[focal_px, 0, cx], [0, focal_px, cy], [0, 0, 1]])
+    t = -R @ position
+    P = K @ np.hstack([R, t.reshape(3, 1)])
+    return P.tolist()
+
+
+def _render_id_pass_exrs(scene, cams, out_dir):
+    """Render each camera's real object-index pass to an EXR: the same
+    compositor graph (Object Index -> OutputFile, OPEN_EXR_MULTILAYER)
+    validated by validate_rig_render.py in M3. Returns exr paths in cam order.
+    """
+    scene.render.resolution_x, scene.render.resolution_y = scene_config.IMAGE_SIZE
+    scene.render.resolution_percentage = 100
+    scene.render.engine = "CYCLES"
+    scene.cycles.samples = _SCAN_SAMPLES
+    scene.view_layers[0].use_pass_object_index = True
+
+    node_group = bpy.data.node_groups.new("SwarmScanCompositing", "CompositorNodeTree")
+    scene.compositing_node_group = node_group
+    try:
+        exr_paths = []
+        for i, cam_obj in enumerate(cams):
+            scene.camera = cam_obj
+            node_group.nodes.clear()
+            render_layers = node_group.nodes.new("CompositorNodeRLayers")
+            id_out = node_group.nodes.new("CompositorNodeOutputFile")
+            id_out.directory = out_dir + os.sep
+            id_out.file_name = f"cam{i}_id_"
+            id_out.file_output_items.clear()
+            id_out.file_output_items.new("FLOAT", "id_")
+            id_out.format.file_format = "OPEN_EXR_MULTILAYER"
+            id_out.format.color_depth = "32"
+            node_group.links.new(render_layers.outputs["Object Index"], id_out.inputs["id_"])
+            bpy.ops.render.render(write_still=True)
+            exr_paths.append(os.path.join(out_dir, f"cam{i}_id_.exr"))
+        return exr_paths
+    finally:
+        # Removing a datablock clears any properties pointing at it, so
+        # scene.compositing_node_group goes back to None afterward.
+        bpy.data.node_groups.remove(node_group)
+
+
+class SWARM_OT_scan(Operator):
+    bl_idname = "swarm.scan"
+    bl_label = "Run Scan"
+    bl_description = (
+        "Render each rig camera's object-index pass, triangulate drone "
+        "positions from the real ID-pass centroids plus Stage 1's synthetic "
+        "pixel noise, and overlay the resulting distance graph vs ground truth"
+    )
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        if _IMPORT_ERROR is not None:
+            self.report({"ERROR"}, f"stage1_geometry import failed: {_IMPORT_ERROR}")
+            return {"CANCELLED"}
+        if not os.path.exists(_SCAN_VENV_PYTHON):
+            self.report({"ERROR"},
+                        f"Project venv not found at {_SCAN_VENV_PYTHON} (needed for OpenEXR readback)")
+            return {"CANCELLED"}
+
+        swarm_coll = bpy.data.collections.get(SWARM_COLLECTION)
+        if swarm_coll is None or len(swarm_coll.objects) < 2:
+            self.report({"ERROR"}, "Generate a swarm first")
+            return {"CANCELLED"}
+        rig_coll = bpy.data.collections.get(RIG_COLLECTION)
+        cams = sorted(
+            (o for o in (rig_coll.objects if rig_coll else []) if o.type == "CAMERA"),
+            key=lambda o: o.name,
+        )
+        if len(cams) < 2:
+            self.report({"ERROR"}, "Place a camera rig (>= 2 cameras) first")
+            return {"CANCELLED"}
+
+        drones = sorted(swarm_coll.objects, key=lambda o: o.name)
+        settings = context.scene.swarm_scan
+
+        shutil.rmtree(_SCAN_TMP_DIR, ignore_errors=True)
+        os.makedirs(_SCAN_TMP_DIR)
+
+        exr_paths = _render_id_pass_exrs(context.scene, cams, _SCAN_TMP_DIR)
+
+        manifest = {
+            "drones": [{"id": obj.pass_index, "position": list(obj.location)} for obj in drones],
+            "cameras": [
+                {
+                    "name": cam_obj.name,
+                    "P": _camera_pose_P(cam_obj, scene_config.IMAGE_SIZE, scene_config.FOCAL_PX),
+                    "exr_path": exr_path,
+                }
+                for cam_obj, exr_path in zip(cams, exr_paths)
+            ],
+            "pixel_noise_std": scene_config.SCAN_PIXEL_NOISE_STD_PX,
+            "d_max": scene_config.D_MAX,
+            "near_threshold_frac": scene_config.SCAN_NEAR_THRESHOLD_FRAC,
+            "noise_seed": settings.scan_seed,
+        }
+        manifest_path = os.path.join(_SCAN_TMP_DIR, "manifest.json")
+        result_path = os.path.join(_SCAN_TMP_DIR, "result.json")
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f)
+
+        try:
+            proc = subprocess.run(
+                [_SCAN_VENV_PYTHON, _SCAN_WORKER_PATH, manifest_path, result_path],
+                capture_output=True, text=True, timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            self.report({"ERROR"}, "scan_worker timed out")
+            return {"CANCELLED"}
+        if proc.returncode != 0:
+            self.report({"ERROR"}, f"scan_worker failed: {proc.stderr[-500:]}")
+            return {"CANCELLED"}
+
+        with open(result_path) as f:
+            result = json.load(f)
+
+        global _LAST_SCAN
+        _LAST_SCAN = result
+
+        for screen in bpy.data.screens:
+            for area in screen.areas:
+                if area.type == "VIEW_3D":
+                    area.tag_redraw()
+
+        near = result["near_threshold_accuracy"]
+        msg = (
+            f"Scan: {result['n_triangulated']}/{result['n_total']} triangulated, "
+            f"{result['overall_accuracy'] * 100:.1f}% adjacency accuracy"
+        )
+        if near is not None:
+            msg += f", {near * 100:.1f}% near-threshold"
+        self.report({"INFO"}, msg)
+        return {"FINISHED"}
+
+
+def _draw_scan_edges():
+    if not _LAST_SCAN:
+        return
+    by_id = {d["id"]: d for d in _LAST_SCAN["drones"]}
+    correct_pts, wrong_pts = [], []
+    for e in _LAST_SCAN["edges"]:
+        a, b = by_id.get(e["i"]), by_id.get(e["j"])
+        if a is None or b is None or a["est_position"] is None or b["est_position"] is None:
+            continue
+        pts = correct_pts if e["correct"] else wrong_pts
+        pts.append(a["est_position"])
+        pts.append(b["est_position"])
+    if not correct_pts and not wrong_pts:
+        return
+
+    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+    gpu.state.blend_set('ALPHA')
+    gpu.state.line_width_set(2.0)
+    for pts, color in ((correct_pts, _SCAN_EDGE_COLOR_CORRECT), (wrong_pts, _SCAN_EDGE_COLOR_WRONG)):
+        if not pts:
+            continue
+        batch = batch_for_shader(shader, 'LINES', {"pos": pts})
+        shader.uniform_float("color", color)
+        batch.draw(shader)
+    gpu.state.line_width_set(1.0)
+    gpu.state.blend_set('NONE')
+
+
+def _draw_scan_hud():
+    if not _LAST_SCAN:
+        return
+    r = _LAST_SCAN
+    lines = [f"Swarm Scan: {r['n_triangulated']}/{r['n_total']} drones triangulated"]
+    lines.append(
+        f"Adjacency accuracy: {r['overall_accuracy'] * 100:.1f}%"
+        if r["overall_accuracy"] is not None else "Adjacency accuracy: n/a"
+    )
+    lines.append(
+        f"Near-D_MAX accuracy: {r['near_threshold_accuracy'] * 100:.1f}% (D_MAX={r['d_max']:.0f}m)"
+        if r["near_threshold_accuracy"] is not None
+        else f"Near-D_MAX accuracy: n/a (D_MAX={r['d_max']:.0f}m)"
+    )
+
+    font_id = 0
+    blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
+    blf.size(font_id, 14)
+    for i, line in enumerate(reversed(lines)):
+        blf.position(font_id, 20, 20 + i * 20, 0)
+        blf.draw(font_id, line)
+
+
 class SWARM_PT_panel(Panel):
     bl_label = "Swarm Scan"
     bl_space_type = "VIEW_3D"
@@ -651,6 +901,17 @@ class SWARM_PT_panel(Panel):
             box.label(text=f"Current rig: {n_cams} cameras")
             box.operator(SWARM_OT_toggle_aim.bl_idname, icon="ORIENTATION_GIMBAL")
 
+        box = layout.box()
+        box.label(text="Scan", icon="VIEWZOOM")
+        box.prop(settings, "scan_seed")
+        box.operator(SWARM_OT_scan.bl_idname, icon="RENDER_STILL")
+        if _LAST_SCAN is not None:
+            box.label(text=f"Triangulated: {_LAST_SCAN['n_triangulated']}/{_LAST_SCAN['n_total']}")
+            acc = _LAST_SCAN["overall_accuracy"]
+            box.label(text=f"Accuracy: {acc * 100:.1f}%" if acc is not None else "Accuracy: n/a")
+            near = _LAST_SCAN["near_threshold_accuracy"]
+            box.label(text=f"Near-threshold: {near * 100:.1f}%" if near is not None else "Near-threshold: n/a")
+
 
 _CLASSES = (
     SwarmScanSettings,
@@ -659,6 +920,7 @@ _CLASSES = (
     SWARM_OT_sim_stop,
     SWARM_OT_place_cameras,
     SWARM_OT_toggle_aim,
+    SWARM_OT_scan,
     SWARM_PT_panel,
 )
 
@@ -671,8 +933,23 @@ def register():
     # True while the modal sim operator is alive; clearing it stops the sim.
     bpy.types.WindowManager.swarm_sim_running = bpy.props.BoolProperty(default=False)
 
+    global _draw_handle_3d, _draw_handle_2d
+    _draw_handle_3d = bpy.types.SpaceView3D.draw_handler_add(
+        _draw_scan_edges, (), 'WINDOW', 'POST_VIEW')
+    _draw_handle_2d = bpy.types.SpaceView3D.draw_handler_add(
+        _draw_scan_hud, (), 'WINDOW', 'POST_PIXEL')
+
 
 def unregister():
+    global _draw_handle_3d, _draw_handle_2d, _LAST_SCAN
+    if _draw_handle_3d is not None:
+        bpy.types.SpaceView3D.draw_handler_remove(_draw_handle_3d, 'WINDOW')
+        _draw_handle_3d = None
+    if _draw_handle_2d is not None:
+        bpy.types.SpaceView3D.draw_handler_remove(_draw_handle_2d, 'WINDOW')
+        _draw_handle_2d = None
+    _LAST_SCAN = None
+
     del bpy.types.WindowManager.swarm_sim_running
     del bpy.types.Scene.swarm_scan
     for cls in reversed(_CLASSES):

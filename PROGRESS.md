@@ -100,15 +100,43 @@ below is **not discarded** — its validated pieces are the addon's foundation:
       M4. **D_MAX correction: not needed for M3 after all — it's consumed
       in M4's adjacency thresholding. D_MAX = 3949m (85% target) locked
       as provisional for M4.**
-- [ ] **M4 — Scan mode**: run the existing triangulation pipeline against
-      current swarm + camera state, visualize the resulting distance map as
-      a viewport overlay vs ground truth. **Scope decision (2026-07-22,
-      made ahead of implementation):** detection source is the object-index
-      EXR pass (centroid of each drone's ID-pass footprint), NOT a real
-      YOLO run -- see the subpixel finding below for why. Stage 1's
-      synthetic pixel-noise model layers on top of the centroids to stand
-      in for detector localization error. D_MAX = 3949m (provisional) is
-      consumed here for adjacency thresholding.
+- [x] **M4 — Scan mode** (2026-07-22): "Run Scan" operator renders each rig
+      camera's real object-index pass (Cycles, same compositor graph M3
+      validated: Object Index -> OutputFile, OPEN_EXR_MULTILAYER), takes each
+      drone's detection as the centroid of its ID-pass footprint -- so
+      occlusion/out-of-frame comes from the actual render, not frustum math --
+      then layers Stage 1's synthetic pixel-noise model on top (per the scope
+      decision below) and reuses `triangulate_point()`/`reconstruct_swarm()`/
+      the adjacency-agreement logic unchanged. D_MAX = 3949m (85% target,
+      recalibrated for the 5km scene) is now live in `scene_config.py`,
+      replacing the stale 1574m placeholder. Viewport overlay: green/red 3D
+      lines between triangulated drones for each graph edge present in either
+      the true or estimated adjacency (green = correctness agrees, red =
+      false positive/negative), plus a HUD readout (triangulated count,
+      overall adjacency accuracy, near-D_MAX-band accuracy -- the hardest,
+      decision-boundary case). Detour mid-implementation: Blender 5.x removed
+      `CompositorNodeMath` (compositor math nodes are now unified with
+      `ShaderNodeMath`); turned out not to matter here, since centroid
+      extraction is done in numpy, not compositor nodes. Real detour:
+      `bpy.data.images.load()` can't read back this project's custom-named
+      "id_" multilayer EXR pass (loads as 0x0/TARGA) -- worked around by
+      running the EXR-read + triangulation step as a `venv/bin/python`
+      subprocess (`blender_addon/scan_worker.py`), reusing the OpenEXR
+      package M3's `validate_rig_report.py` already depends on (now listed in
+      `requirements.txt`). Camera poses for triangulation are read directly
+      from each rig camera's actual `matrix_world` (not re-derived from a
+      look-at target), so hand-rotated manual-mode cameras triangulate
+      correctly too. Validated end-to-end via the real operator, not a
+      synthetic stand-in (`blender_addon/validate_scan_pipeline.py`,
+      rerunnable): 4 seeds, 19-20/20 triangulated, 100% adjacency accuracy
+      (both overall and near-threshold), mean distance error 5-7m against a
+      3949m D_MAX -- comfortably resolved. Scope decision (made ahead of
+      implementation): detection source is the object-index EXR pass
+      (centroid of each drone's ID-pass footprint), NOT a real YOLO run --
+      see the subpixel finding below for why. Display Scale (whatever the
+      swarm was generated with) is reused for scan rendering too, same
+      reasoning as M3's rig-coverage validation: true-scale (0.5m) drones are
+      subpixel and wouldn't rasterize in the ID pass at all.
 - [x] **Tooling** (2026-07-22): double-clickable "Swarm Scanner.app" at
       repo root (minimal unsigned bundle wrapping the dev_load.py launch;
       finds Blender across Steam//Applications/~/Applications, passes extra
@@ -144,10 +172,9 @@ drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
   `scene_config.py` is the single source of truth)
 - Drone size: **0.5m footprint, assumption not confirmed spec** (Intel
   Shooting Star reference ~38cm, "a little bigger") — `DRONE_SIZE_M`
-- D_MAX: **3949m (85% target reachability), locked as provisional** for
-  M4's adjacency thresholding — the old 1574m value was stale (2km scene);
-  scene_config.py still carries the stale value and should be updated when
-  M4 actually consumes it
+- D_MAX: **3949m (85% target reachability)**, live in `scene_config.py` and
+  consumed by M4's adjacency thresholding — the old 1574m value was stale
+  (2km scene)
 - Camera count is adjustable in the addon (2-12, default 6); coverage at
   6 validated by real renders in M3
 
