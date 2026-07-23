@@ -457,7 +457,13 @@ Frame differencing is classical. The ML component fits where classical
 methods hit limits: false-positive rejection in cluttered scenes,
 correspondence in dense swarms, and temporal association across occlusions.
 
-#### M3 — Temporal multi-view dataset [NOT STARTED]
+#### M3 — Temporal multi-view dataset [IN PROGRESS]
+
+**Superseded single-frame render (2026-07-23, 141 min):** 499/500 clips at
+128 samples, 24mm FF, 2km standoff, 12 cameras. 3.09 GB. Uses 20x display
+scale and single-frame clips — does NOT match revised spec (needs temporal
+sequences, true scale, boids flight). Infrastructure carries forward;
+rendered data is a timing/calibration exercise, not the final dataset.
 
 **What the dataset must contain:**
 - **Frame sequences**, not stills: 10–30 frame clips at 10–30 fps
