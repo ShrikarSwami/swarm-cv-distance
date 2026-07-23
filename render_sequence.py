@@ -117,17 +117,11 @@ def generate_trajectory(n_frames, seed):
 
 
 def setup_scene():
-    """Clear scene and configure render settings."""
-    for obj in list(bpy.data.objects):
-        bpy.data.objects.remove(obj, do_unlink=True)
-    for mesh in list(bpy.data.meshes):
-        bpy.data.meshes.remove(mesh)
-    for cam in list(bpy.data.cameras):
-        bpy.data.cameras.remove(cam)
-    for light in list(bpy.data.lights):
-        bpy.data.lights.remove(light)
-    for ng in list(bpy.data.node_groups):
-        bpy.data.node_groups.remove(ng)
+    """Clear scene and configure render settings.
+
+    Uses factory reset to start clean, then rebuilds lighting.
+    """
+    bpy.ops.wm.read_factory_settings(use_empty=True)
 
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
@@ -136,13 +130,19 @@ def setup_scene():
     scene.render.resolution_x = H_PX
     scene.render.resolution_y = V_PX
     scene.render.resolution_percentage = 100
-    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.file_format = "OPEN_EXR"
+    scene.render.image_settings.color_depth = "32"
     return scene
 
 
 def setup_lighting(scene):
-    """Sun light + sky-colored world background."""
-    world = bpy.data.worlds.get("World") or bpy.data.worlds.new("World")
+    """Sun light + sky-colored world background.
+
+    After factory_reset(use_empty=True), there's no world or light.
+    Create both explicitly.
+    """
+    # World background
+    world = bpy.data.worlds.new("sky_world")
     scene.world = world
     world.use_nodes = True
     nodes = world.node_tree.nodes
@@ -154,6 +154,7 @@ def setup_lighting(scene):
     output = nodes.new("ShaderNodeOutputWorld")
     links.new(bg.outputs["Background"], output.inputs["Surface"])
 
+    # Sun light (required for Cycles to illuminate objects)
     light_data = bpy.data.lights.new("Sun", "SUN")
     light_data.energy = 4.0
     light_data.color = (1.0, 0.95, 0.85)
@@ -164,7 +165,13 @@ def setup_lighting(scene):
 
 
 def create_drone_mesh():
-    """Create a reusable drone mesh (small dark cube)."""
+    """Create a reusable drone mesh (small emissive cube).
+
+    Uses emission shader so drones are visible at sub-pixel sizes.
+    This is a detection-verification render, not a photorealistic one.
+    The emission ensures Cycles produces a measurable signal even for
+    0.5m objects at 2km standoff.
+    """
     mesh = bpy.data.meshes.new("drone_mesh")
     verts = [
         (-0.5, -0.5, -0.5), (0.5, -0.5, -0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5),
@@ -176,11 +183,19 @@ def create_drone_mesh():
 
     mat = bpy.data.materials.new("drone_mat")
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.1, 0.1, 0.1, 1.0)
-        bsdf.inputs["Metallic"].default_value = 0.5
-        bsdf.inputs["Roughness"].default_value = 0.5
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+
+    output = nodes.new("ShaderNodeOutputMaterial")
+    output.location = (300, 0)
+
+    emission = nodes.new("ShaderNodeEmission")
+    emission.location = (0, 0)
+    emission.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    emission.inputs["Strength"].default_value = 100.0
+
+    links.new(emission.outputs["Emission"], output.inputs["Surface"])
     mesh.materials.append(mat)
     return mesh
 
@@ -304,7 +319,7 @@ def main():
             bpy.context.view_layer.update()
 
             # Render
-            filepath = str(view_dir / f"frame_{frame_idx:04d}.png")
+            filepath = str(view_dir / f"frame_{frame_idx:04d}.exr")
             render_frame(scene, cam_obj, filepath)
 
         t_elapsed = time.time() - t_start
