@@ -245,23 +245,114 @@ gives 11px on target but needs hundreds of cameras for overlap.
 Simulation-verified ≥2-view camera counts (dome arrangement, 20 drones
 in 5km×5km×1km):
 
-| Config | 500m | 1km | 2km | 5km | 10km |
-|---|---|---|---|---|---|
-| 24mm FF | 30✗ | 30✗ | **12✓** | **3✓** | **2✓** |
-| 50mm FF | 30✗ | 30✗ | 30✗ | 25✓ | **2✓** |
-| 100mm+ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Config | 500m | 1km | 2km | 3km | 5km | 7.5km | 10km |
+|---|---|---|---|---|---|---|---|
+| 24mm FF | 30✗ | 30✗ | **12✓** | **5✓** | **3✓** | **2✓** | **2✓** |
+| 50mm FF | 30✗ | 30✗ | 30✗ | 30✗ | 25✗* | **4✓** | **2✓** |
+| 100mm+ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
 ✓ = all 20 drones seen by ≥2 cameras. ✗ = <30 cameras insufficient.
+*50mm @ 5km: 25 cams in sim but still exceeds12-cam ground-post limit.
+
+**True-scale apparent sizes at coverage-passing standoffs:**
+
+| Config | Standoff | Cams | Apparent px | Detector class |
+|---|---|---|---|---|
+| 24mm FF 1920 | 2km | 12 | 0.58px | sub-pixel |
+| 24mm FF 6000 | 2km | 9 | 1.00px | sub-pixel (floor) |
+| 24mm FF 8192 | 2km | 9 | 1.37px | sub-pixel |
+| 24mm FF 1920 | 5km | 3 | 0.23px | sub-pixel |
+| 50mm FF 1920 | 7.5km | 4 | 0.18px | sub-pixel |
+| 50mm FF 8192 | 5km | 12 | 1.14px | sub-pixel (floor) |
 
 **Only 24mm and 50mm achieve ≥2-view coverage with practical camera counts.**
-Every narrower lens fails at every standoff. This is the real detection
-boundary — not pixel size alone.
+Every narrower lens fails at every standoff. But even the configs that pass
+coverage give ≤1.37px at true scale — sub-pixel for bbox/centroid detectors.
 
 **M3 config chosen: 24mm full-frame, 2km standoff, 12 cameras.**
 - ≥2-view coverage: ✓ (simulation-verified)
 - True-scale apparent size: 0.58px (sub-pixel)
 - At 20x display scale: ~11.6px in ID pass renders (detectable)
 - This is the only ground-post config satisfying both ≥2-view AND ≤12 cameras
+
+### M1 correction — coverage-vs-resolution is the binding constraint (2026-07-23)
+
+**Headline: No ground-post (or any-tier) configuration satisfies ≥2-camera
+dome coverage AND a detectable true-scale pixel size simultaneously for a
+5km×5km×1km swarm of 0.5m drones.**
+
+The optics sweep's decision boundary table used 1D linear tiling for camera
+counts, which underestimates by 2-10× vs the actual 2D dome coverage
+simulation. When both constraints are checked against the dome simulation:
+
+- **bbox detector (≥8px):** zero configs pass both constraints at any tier,
+  any standoff (100m–10km), any sensor class.
+- **centroid detector (≥3px):** zero configs pass both constraints.
+- **subpixel/temporal (≥1px):** exactly 3 configs barely pass, all requiring
+  6000+ pixel sensors:
+  - 24mm FF 8192px @ 2km: 1.37px, 9 cams (ground-post, needs high-res body)
+  - 50mm FF 8192px @ 5km: 1.14px, 12 cams (ground-post, marginal)
+  - 24mm FF 6000px @ 2km: 1.00px, 9 cams (ground-post, at detection floor)
+
+**Why close standoffs don't help:** At <500m, pixel size improves but the
+swarm's angular extent explodes (at 100m, ±2.5km subtends ~180°). Even 30
+dome cameras can't achieve ≥2-view coverage — the volume is simply too large
+to surround from nearby.
+
+**Why long lenses don't help:** Every lens ≥100mm fails coverage at every
+standoff with ≤30 cameras. The dome simulation shows min_views=0 for all
+100mm+, 200mm, 400mm, 800mm, and 1200mm FF configs across 500m–10km.
+
+**The physics:** Coverage requires wide FOV (≥24mm). Wide FOV at the only
+standoffs where dome coverage works (≥2km for 24mm) produces ≤1.4px on a
+0.5m target. The two constraints pull in opposite directions and cannot be
+simultaneously satisfied.
+
+**M3 dataset was abandoned** because the chosen config (24mm FF / 2km / 12
+cams / 20× display scale) renders drones at ~11.6px only because of 20×
+display inflation. At true scale they are 0.58px — a detector trained on
+inflated targets learns something operationally meaningless.
+
+### Minimum changes to make per-frame detection feasible (ranked by cost)
+
+1. **Increase assumed drone size** (lowest cost): A 5m drone (10× current
+   0.5m assumption) at 24mm FF / 2km gives 5.8px — near centroid threshold.
+   A 12.5m drone gives 8px+ (bbox threshold). Cost: changes operational
+   assumptions (Intel Shooting Star is ~38cm). This is a modeling choice,
+   not a physics change. If the target swarm uses larger airframes (military
+   Group 3-4 UAS, 2-5m wingspan), this reframes the problem meaningfully.
+
+2. **Reduce swarm extent** (moderate cost): A 1km×1km×500m swarm at 24mm FF
+   / 1km standoff gives ≥2-view with ~5 cams AND ≥3px centroid detection.
+   Cost: changes the operational scenario from "wide-area swarm" to
+   "localized formation." The5km assumption comes from the broader project;
+   if the real scenario allows a smaller observable area, everything works.
+
+3. **Closer standoff + abandon full-volume coverage** (moderate cost):
+   Cameras at 200-300m give 2-6px on 0.5m drones, but can't see the full
+   5km volume. Could track sub-swarms or individual drones. Cost: loses
+   the "see everything at once" requirement; needs a coverage-planning
+   story for which drones are observed by which cameras.
+
+4. **Hybrid rig: wide for coverage + narrow for resolution** (higher cost):
+   2-3 wide cameras (24mm) for global coverage and drone counting, plus
+   8-10 narrow cameras (100-200mm) pointed at known high-interest regions.
+   Cost: needs a priori knowledge of where to point the narrow cameras, or
+   a wide→narrow handoff system. Fundamentally a two-stage detection
+   architecture.
+
+5. **Motion/streak detection across frames** (highest conceptual cost,
+   lowest hardware cost): Instead of per-frame object detection, detect
+   drone motion over time as pixel-level streaks or consistent point
+   displacements across frames. Works at <1px per frame if the drone moves
+   enough between frames. Cost: completely different detector architecture
+   (optical flow / background subtraction, not YOLO). Abandons the
+   "single-frame detection" paradigm. But the optics_sweep.py already
+   notes this as a 1.5-2× extension to detector thresholds.
+
+**Hard constraint maintained:** No display_scale inflation in training data
+or reported metrics. Any visualization inflation is explicitly separated
+from the dataset pipeline.
 
 **Sanity check passed:** Same angular resolution → same apparent pixel size
 (validated across full-frame and APS-C sensor classes).
