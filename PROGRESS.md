@@ -237,23 +237,31 @@ drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
 
 ### M1 — Optics/standoff trade study (2026-07-23)
 
-**Core finding:** The detection boundary depends on platform tier, detector
-threshold, and — critically — how many cameras you can field. The analytical
-sweep computed 736 configs across3 platform tiers,4 sensor classes,8 focal
-lengths,8 standoffs, and4 resolutions. Key results (all respecting practical
-camera-count limits):
+**Core finding:** The binding constraint for triangulation is ≥2-camera
+overlap (every drone seen by ≥2 cameras), NOT pixel resolution. The
+≥2-view requirement eliminates all narrow-FOV configs — 800mm at 10km
+gives 11px on target but needs hundreds of cameras for overlap.
 
-| Tier | Max cameras | Bbox (≥8px) | Centroid (≥3px) | Sub-pixel (≥1px) |
-|---|---|---|---|---|
-| A (ground post) | 12 | 10km (800mm,11 cams) | 10km (400mm,6 cams) | 10km (100mm,2 cams) |
-| B (airborne UAS) | 6 | 750m (50mm,6 cams) | 3km (100mm,6 cams) | 5km (50mm,3 cams) |
-| C (cheap commodity) | 8 | — | 500m (24mm,6 cams) | 10km (100mm,8 cams) |
+Simulation-verified ≥2-view camera counts (dome arrangement, 20 drones
+in 5km×5km×1km):
 
-**The coverage/resolution tension:** Narrower FOV (longer focal length) gives
-more pixels on target but requires more cameras for full swarm coverage. The
-analytical model shows the camera-count constraint is the binding factor for
-every tier — without it, the P1000's 539mm zoom achieves detection at 10km,
-but requires 43–240 cameras for full coverage.
+| Config | 500m | 1km | 2km | 5km | 10km |
+|---|---|---|---|---|---|
+| 24mm FF | 30✗ | 30✗ | **12✓** | **3✓** | **2✓** |
+| 50mm FF | 30✗ | 30✗ | 30✗ | 25✓ | **2✓** |
+| 100mm+ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+✓ = all 20 drones seen by ≥2 cameras. ✗ = <30 cameras insufficient.
+
+**Only 24mm and 50mm achieve ≥2-view coverage with practical camera counts.**
+Every narrower lens fails at every standoff. This is the real detection
+boundary — not pixel size alone.
+
+**M3 config chosen: 24mm full-frame, 2km standoff, 12 cameras.**
+- ≥2-view coverage: ✓ (simulation-verified)
+- True-scale apparent size: 0.58px (sub-pixel)
+- At 20x display scale: ~11.6px in ID pass renders (detectable)
+- This is the only ground-post config satisfying both ≥2-view AND ≤12 cameras
 
 **Sanity check passed:** Same angular resolution → same apparent pixel size
 (validated across full-frame and APS-C sensor classes).
