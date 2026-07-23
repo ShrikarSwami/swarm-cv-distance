@@ -232,3 +232,47 @@ drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
   coverage" (e.g. cost/practicality of an actual observer-platform count)
 - Noise model that scales with apparent object pixel size rather than flat
   px (from old Stage 1 backlog; still worth doing, matters more at 5km)
+
+## Phase 3 — synthetic multi-view dataset + ML distance estimation
+
+### M1 — Optics/standoff trade study (2026-07-23)
+
+**Core finding:** The detection boundary depends on platform tier, detector
+threshold, and — critically — how many cameras you can field. The analytical
+sweep computed 736 configs across3 platform tiers,4 sensor classes,8 focal
+lengths,8 standoffs, and4 resolutions. Key results (all respecting practical
+camera-count limits):
+
+| Tier | Max cameras | Bbox (≥8px) | Centroid (≥3px) | Sub-pixel (≥1px) |
+|---|---|---|---|---|
+| A (ground post) | 12 | 10km (800mm,11 cams) | 10km (400mm,6 cams) | 10km (100mm,2 cams) |
+| B (airborne UAS) | 6 | 750m (50mm,6 cams) | 3km (100mm,6 cams) | 5km (50mm,3 cams) |
+| C (cheap commodity) | 8 | — | 500m (24mm,6 cams) | 10km (100mm,8 cams) |
+
+**The coverage/resolution tension:** Narrower FOV (longer focal length) gives
+more pixels on target but requires more cameras for full swarm coverage. The
+analytical model shows the camera-count constraint is the binding factor for
+every tier — without it, the P1000's 539mm zoom achieves detection at 10km,
+but requires 43–240 cameras for full coverage.
+
+**Sanity check passed:** Same angular resolution → same apparent pixel size
+(validated across full-frame and APS-C sensor classes).
+
+**Render pipeline validated:** Blender 5.x headless Cycles with ID-pass
+compositing works, but requires: (1) addon operators for scene graph
+evaluation (standalone objects don't expose Object Index pass), (2)
+`bpy.context.view_layer.update()` before render to evaluate camera rotations,
+(3) venv Python for EXR extraction (Blender's bundled Python lacks OpenEXR).
+
+**Detector-class thresholds flagged as rules of thumb** —8px (YOLO-scale),
+3–5px (centroid with known size), <3px (sub-pixel/temporal). All are
+approximations with stated assumptions about background clutter and target
+knowledge.
+
+**Schema decided:** `gt.npz` stores positions, K, extrinsics, meta only.
+Distances and adjacency computed on demand with tunable D_MAX. No loose
+frames on disk (FFV1/MKV master, decode to scratch for training).
+
+### M2 — Schema implementation + smoke test (2026-07-23)
+
+[In progress]
