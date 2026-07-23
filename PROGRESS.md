@@ -233,7 +233,13 @@ drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
 - Noise model that scales with apparent object pixel size rather than flat
   px (from old Stage 1 backlog; still worth doing, matters more at 5km)
 
-## Phase 3 — synthetic multi-view dataset + ML distance estimation
+## Phase 3 — temporal multi-view detection + triangulation
+
+**Revised plan (post-M1):** M1 ruled out per-frame object detection
+(YOLO etc.) at true scale. The detection backbone is now frame
+differencing (classical, not learned). The pipeline becomes: frame
+differencing → multi-camera association → triangulation → adjacency
+inference. The dataset and milestones are rebuilt around this.
 
 ### M1 — Optics/standoff trade study [CLOSED 2026-07-23]
 
@@ -253,6 +259,10 @@ needs empirical validation before becoming a design commitment.
 - Conclusion flips to "marginal" at flux≈8–10 (2× below assumed)
 - Viewing geometry (sky fraction ~47% for ground cameras) is moot — frame
   diff eliminates static texture regardless
+- Multi-camera fusion does NOT lower per-camera flux requirement. Fusion
+  buys false-positive rejection (true drone appears in all N cameras,
+  noise appears in ~1), not sensitivity. Per-camera threshold remains
+  flux≥5 for SNR≥3.
 
 **What M1 did NOT settle:**
 - Actual drone reflectance / sensor flux (flux≈16 is derived, not measured)
@@ -424,29 +434,110 @@ knowledge.
 Distances and adjacency computed on demand with tunable D_MAX. No loose
 frames on disk (FFV1/MKV master, decode to scratch for training).
 
-### M2 — Schema implementation + smoke test (2026-07-23)
+### M2 — Schema implementation + smoke test (2026-07-23) [superseded]
 
-**Schema implemented** (`dataset_schema.py`): `clip.npz` stores K, extrinsics,
-positions (float32), meta. Distances and adjacency computed on demand via
-`load_clip(path, d_max)` with tunable D_MAX. FFV1/MKV round-trip verified
-bit-exact (96× compression vs raw).
+Original M2 implemented the single-frame clip schema (`dataset_schema.py`)
+and rendered 20 smoke-test clips. This work is not wasted — the schema,
+FFV1/MKV pipeline, and render infrastructure carry forward — but the
+single-frame dataset design is superseded by M1's finding that per-frame
+detection doesn't work. The dataset must now contain **frame sequences**
+with temporal continuity, not single stills.
 
-**Smoke test: 20 clips generated** (2 envs × 2 weather × 5 seeds),
-~3.7s per clip at 32 Cycles samples, 1920×1080, 6 views. Total: ~74s.
+### Revised Phase 3 milestones (post-M1)
 
-**M2 validation finding (critical):** The smoke-test config (50mm at 1000m
-standoff) produces views where individual cameras see only a small patch of
-the5km swarm. The "20/20 in frame" validation result is a projection-bounds
-check (are projected pixel coords within image?), NOT an ID-pass centroid
-match — EXRs were not saved to dataset. The rendered MKV frames show flat
-backgrounds with no visible drones in most views. This is the same
-coverage-vs-resolution tension identified in M1: at 1000m standoff, 50mm
-gives ~40° FOV (~730m view width), far less than the5km swarm extent.
+**Pipeline architecture (revised):**
 
-**Implication for M3:** Smoke-test clips need wider-angle lenses (24mm gives
-73.7° FOV) or closer standoff to achieve per-view drone visibility. The M1
-analytical model already maps which configs work; M3 should use those
-validated configs rather than defaulting to 50mm.
+```
+Multi-camera video → Frame differencing (per camera) → Detections (per frame)
+  → Multi-camera association (epipolar matching) → Triangulation
+    → Pairwise distances → Adjacency matrix → GA/PSO
+```
 
-**Per-clip render cost:** ~3.7s at 32 samples (1920×1080, 6 views). At 128
-samples (training quality): ~15s/clip estimated. At256 samples: ~30s/clip.
+Frame differencing is classical. The ML component fits where classical
+methods hit limits: false-positive rejection in cluttered scenes,
+correspondence in dense swarms, and temporal association across occlusions.
+
+#### M3 — Temporal multi-view dataset [NOT STARTED]
+
+**What the dataset must contain:**
+- **Frame sequences**, not stills: 10–30 frame clips at 10–30 fps
+  (drone must move ≥0.3 px between frames for frame differencing to work)
+- **Motion continuity**: drones fly realistic trajectories (boids sim
+  already generates these via M2 flight sim)
+- **Multi-view synchronization**: all cameras capture the same frame
+  (already validated in M3 camera rig)
+- **Ground truth tracks**: 3D position of each drone at each frame
+  (not just start/end — full trajectory for triangulation validation)
+- **Per-frame ground truth visibility**: which drones are visible in
+  which cameras at which frames (from ID-pass, already validated in M4)
+
+**Render config:** 24mm FF, 2km standoff, 12 cameras (M1's validated
+coverage config). True scale (0.5m drones, no display inflation).
+32 Cycles samples (sufficient for frame differencing — noise is handled
+by the temporal pipeline, not the renderer).
+
+**Dataset size target**: ~500 clips × 20 frames × 12 views = 120,000
+rendered frames. At ~0.5s/frame (24mm, 32 samples, 1920×1080): ~17 hours
+render time. Batch overnight.
+
+**Schema update**: extend `clip.npz` to store per-frame positions (N_frames,
+N_drones, 3) instead of single positions. Add frame timestamps.
+
+#### M4 — Detection pipeline validation [NOT STARTED]
+
+**What M4 validates (classical pipeline, no learning):**
+
+1. **Per-camera frame differencing**: on rendered sequences, measure
+   detection SNR per drone per frame. Compare against perturbation test
+   predictions (flux≥5 → SNR≥3). This is the empirical flux validation.
+
+2. **Multi-camera association**: match detections across camera views using
+   epipolar geometry. Measure association accuracy (correct matches / total
+   matches) as a function of drone count and noise level.
+
+3. **Triangulation from temporal detections**: feed associated multi-view
+   detections into existing `triangulate_point()`/`reconstruct_swarm()`.
+   Compare against ground-truth tracks. Report distance error and
+   adjacency agreement vs D_MAX.
+
+4. **End-to-end accuracy**: from raw multi-camera video frames to
+   adjacency matrix. Report: detection rate (fraction of drones detected
+   per frame), false-positive rate, triangulation error, adjacency
+   agreement.
+
+**This is the critical milestone.** If the classical pipeline (frame diff
+→ epipolar match → triangulate) achieves acceptable accuracy, ML is
+optional refinement. If it doesn't, ML is needed and we know exactly
+where.
+
+#### M5 — ML augmentation (if needed) [NOT STARTED]
+
+ML fits where classical methods hit limits. Three candidates, in order
+of likely impact:
+
+1. **False-positive rejection** (lowest risk): A binary classifier that
+   takes a candidate detection (patch around a bright spot in the
+   difference image) and decides "drone" vs "noise/shimmer". Classical
+   frame differencing produces candidates; ML filters them. Training data:
+   M4's rendered sequences with ground-truth drone/noise labels. Simple
+   CNN, small model, fast inference. **This is where YOLO-style detection
+   re-enters** — not as a per-frame detector (that failed at 0.32px) but
+   as a post-differencing classifier on candidate patches.
+
+2. **Cross-camera correspondence** (medium risk): Learning to match
+   detections across views when epipolar constraints are noisy. At 0.32px,
+   detection centroids have ~1px uncertainty, which maps to large 3D
+   uncertainty. A learned matcher could use temporal trajectory shape
+   (the drone's path across frames) as a signature for association.
+   Training data: M4's associated detections with ground-truth matches.
+
+3. **End-to-end temporal detector** (highest risk, highest ceiling):
+   Replace frame differencing + classical matching with a spatiotemporal
+   model (3D CNN or transformer over the multi-camera video cube).
+   Detects drones directly from raw frames without the two-stage
+   pipeline. Requires large training set. Only justified if stages 1-2
+   prove insufficient.
+
+**M5 is conditional.** Run M4 first. If the classical pipeline achieves
+≥90% detection rate with ≤5% false-positive rate, M5 is optional
+optimization, not a requirement.
