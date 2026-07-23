@@ -1,0 +1,1 @@
+{"dataset_root": "dataset_temporal", "n_frames": 20, "fps": 10, "n_views": 12, "focal_mm": 24, "sensor_width_mm": 36.0, "resolution": [1920, 1080], "standoff_m": 2000, "n_drones": 20, "samples": 32, "clip_name": "seq_000", "seed": 1000}
