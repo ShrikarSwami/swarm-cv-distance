@@ -207,7 +207,7 @@ def add_drones_to_scene(mesh, positions):
         obj = bpy.data.objects.new(f"drone_{i:03d}", mesh)
         obj.location = Vector(pos.tolist())
         obj.scale = (DRONE_SIZE_M, DRONE_SIZE_M, DRONE_SIZE_M)
-        bpy.context.collection.objects.link(obj)
+        bpy.context.scene.collection.objects.link(obj)
         drones.append(obj)
     return drones
 
@@ -250,7 +250,7 @@ def create_cameras(n_views, seed):
         mat[0][3], mat[1][3], mat[2][3] = cam_pos[0], cam_pos[1], cam_pos[2]
         cam_obj.matrix_world = mat
 
-        bpy.context.collection.objects.link(cam_obj)
+        bpy.context.scene.collection.objects.link(cam_obj)
         cameras.append(cam_obj)
 
     return cameras
