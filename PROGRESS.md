@@ -354,6 +354,63 @@ inflated targets learns something operationally meaningless.
 or reported metrics. Any visualization inflation is explicitly separated
 from the dataset pipeline.
 
+### Temporal detection investigation (2026-07-23)
+
+**Setup:** Synthetic 90-condition sweep at 24mm FF / 2km standoff / true
+scale (0.5m drones). Actual apparent size is **0.32px** (the 0.58px figure
+from earlier used a stale 1400px focal from scene_config; the real 24mm
+optics give 0.32px). PSF modeled as Gaussian with σ=0.7px. Three
+backgrounds: sky (σ≈2), terrain (σ≈12), mixed. Speeds 0.1–5.0 px/frame
+(4.7–234 m/s), flux 5–80 total brightness units.
+
+**Key finding: temporal detection helps, but the answer is background-dependent.**
+
+Against **clear sky** (σ≈2):
+- Frame differencing: SNR≥5 at flux≥5, all speeds >0.3 px/frame (14 m/s).
+  A 0.5m drone with ≥3.6% contrast-vs-sky is detectable via frame diff.
+- Background subtraction: SNR≥5 at flux≥5, ALL speeds including hover.
+  Works because the static background is learned and subtracted, leaving
+  the moving (or hovering) drone as foreground.
+- Shifted accumulation: marginal SNR (3–4), needs matched-filter refinement.
+
+Against **terrain** (σ≈12):
+- Frame differencing: SNR≥5 at flux≥20, speeds >0.3 px/frame. Need ≥11%
+  contrast-vs-terrain — achievable for dark drones against bright ground.
+- Background subtraction: SNR≥5 at flux≥60 for slow drones. Needs ≥21%
+  contrast — difficult for realistic reflectances.
+- Shifted accumulation: fails (SNR<0) — terrain clutter dominates.
+
+Against **mixed background** (sky + terrain transition):
+- Similar to sky for drones in the sky portion.
+- Drones over terrain portion follow terrain constraints.
+
+**Detection boundary (physical interpretation):**
+
+| Condition | Min flux | Physical meaning |
+|---|---|---|
+| Sky, frame diff, speed>14m/s | ~5 | 3.6% contrast-vs-sky (dark drone, bright sky) |
+| Sky, bg subtraction, hover | ~5 | Same contrast, any speed |
+| Terrain, frame diff, speed>14m/s | ~20 | 11% contrast-vs-terrain |
+| Terrain, bg subtraction, hover | ~60 | 21% contrast (dark drone on bright ground) |
+
+**Critical limitation for the swarm scenario:** A real swarm has drones over
+both sky and terrain backgrounds simultaneously. Drones near the horizon
+or over ground are harder to detect than those against sky. The detector
+must handle the worst case in the field of view, which is terrain.
+
+**Honest assessment:** Temporal detection closes the gap against sky but
+NOT against terrain for realistic drone contrasts. For the 5km×5km×1km
+scenario where the camera looks down at a swarm over ground, most of the
+background is terrain — the harder case. This is a partial positive result:
+temporal detection is a genuine improvement over per-frame detection, but
+it does not fully resolve the sub-pixel problem for operational scenarios
+with terrain backgrounds.
+
+**Not yet done (if pursued):** Real Blender renders at true scale to validate
+the synthetic model against actual Cycles rendering with real PSF, noise,
+and terrain textures. Matched-filter detection (template correlation)
+instead of simple peak SNR. Multi-camera temporal fusion.
+
 **Sanity check passed:** Same angular resolution → same apparent pixel size
 (validated across full-frame and APS-C sensor classes).
 
