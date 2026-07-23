@@ -184,7 +184,7 @@ scene.compositing_node_group = node_group
 # ---------------------------------------------------------------------------
 
 scene.render.engine = "CYCLES"
-scene.cycles.samples = 32
+scene.cycles.samples = cfg.get("samples", 32)
 scene.cycles.use_denoising = False
 scene.render.resolution_x = h_px
 scene.render.resolution_y = v_px
