@@ -249,6 +249,9 @@ def create_cameras(n_views, seed):
         mat[0][2], mat[1][2], mat[2][2] = -forward.x, -forward.y, -forward.z
         mat[0][3], mat[1][3], mat[2][3] = cam_pos[0], cam_pos[1], cam_pos[2]
         cam_obj.matrix_world = mat
+        with open(f"/tmp/cam_pos_{i}.txt", "w") as f:
+            f.write(f"pos={list(cam_pos)}\n")
+            f.write(f"center={list(center)}\n")
 
         bpy.context.scene.collection.objects.link(cam_obj)
         cameras.append(cam_obj)
