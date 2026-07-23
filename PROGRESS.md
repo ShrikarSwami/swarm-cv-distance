@@ -476,14 +476,26 @@ coverage config). True scale (0.5m drones, no display inflation).
 32 Cycles samples (sufficient for frame differencing — noise is handled
 by the temporal pipeline, not the renderer).
 
-**Dataset size target**: ~500 clips × 20 frames × 12 views = 120,000
-rendered frames. At ~0.5s/frame (24mm, 32 samples, 1920×1080): ~17 hours
-render time. Batch overnight.
+**Validation-first approach:** Render30 clips first (not 500). If M4
+reveals the dataset needs different characteristics — longer sequences,
+different frame rate, different motion — we lose30 clips, not 500.
+Same discipline: cheap check before expensive commitment.
 
 **Schema update**: extend `clip.npz` to store per-frame positions (N_frames,
 N_drones, 3) instead of single positions. Add frame timestamps.
 
 #### M4 — Detection pipeline validation [NOT STARTED]
+
+**Primary risk: correspondence.** The fusion analysis assumed detections
+could be matched across cameras. With20 near-identical targets at0.32px,
+many anonymous blobs will be epipolar-consistent with the wrong partner.
+This project has deferred correspondence since the beginning via the
+Blender object-ID shortcut. M4 is where that debt comes due.
+
+**Critical rule:** Ground-truth drone IDs from the ID pass are used only
+for scoring, never as pipeline input. M4 must demonstrate that the
+pipeline can associate detections WITHOUT an oracle. If it can't, that
+failure is the result — not a tuning problem.
 
 **What M4 validates (classical pipeline, no learning):**
 
@@ -491,24 +503,35 @@ N_drones, 3) instead of single positions. Add frame timestamps.
    detection SNR per drone per frame. Compare against perturbation test
    predictions (flux≥5 → SNR≥3). This is the empirical flux validation.
 
-2. **Multi-camera association**: match detections across camera views using
-   epipolar geometry. Measure association accuracy (correct matches / total
-   matches) as a function of drone count and noise level.
+2. **Correspondence (PRIMARY RISK)**: match anonymous detections across
+   camera views. Pipeline:
+   a. Frame differencing produces candidate blobs per camera per frame
+   b. Epipolar geometry constrains which blobs in camera B could match
+      a blob in camera A (must lie within ±ε pixels of the epipolar line)
+   c. Temporal consistency: a true match must be epipolar-consistent
+      ACROSS multiple consecutive frames, not just one
+   d. Score: correct matches / total matches, false-positive rate,
+      as function of drone count and inter-drone spacing
 
-3. **Triangulation from temporal detections**: feed associated multi-view
+   The epipolar + temporal-consistency filter is classical (no learning).
+   Report correspondence accuracy SEPARATELY from triangulation accuracy
+   so we can see which stage fails.
+
+3. **Triangulation from associated detections**: feed associated multi-view
    detections into existing `triangulate_point()`/`reconstruct_swarm()`.
    Compare against ground-truth tracks. Report distance error and
    adjacency agreement vs D_MAX.
 
 4. **End-to-end accuracy**: from raw multi-camera video frames to
-   adjacency matrix. Report: detection rate (fraction of drones detected
-   per frame), false-positive rate, triangulation error, adjacency
-   agreement.
+   adjacency matrix. Report: detection rate, false-positive rate,
+   correspondence accuracy, triangulation error, adjacency agreement.
+   Break down errors by stage so we know whether failure is detection,
+   correspondence, or triangulation.
 
 **This is the critical milestone.** If the classical pipeline (frame diff
 → epipolar match → triangulate) achieves acceptable accuracy, ML is
 optional refinement. If it doesn't, ML is needed and we know exactly
-where.
+where — and correspondence is the most likely failure point.
 
 #### M5 — ML augmentation (if needed) [NOT STARTED]
 
