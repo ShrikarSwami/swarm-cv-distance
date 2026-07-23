@@ -235,7 +235,30 @@ drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
 
 ## Phase 3 — synthetic multi-view dataset + ML distance estimation
 
-### M1 — Optics/standoff trade study (2026-07-23)
+### M1 — Optics/standoff trade study [CLOSED 2026-07-23]
+
+**Status: M1 closed.** Full findings in `docs/M1_optics_findings.md`.
+
+**Headline:** Per-frame object detection is infeasible at true scale (0.32px
+apparent size). Temporal detection via frame differencing is viable under
+realistic deployment conditions, contingent on drone producing flux≥8 at
+the sensor (2× margin below the assumed flux≈16). The flux≈16 estimate
+needs empirical validation before becoming a design commitment.
+
+**What M1 settled:**
+- No camera config achieves ≥2-view coverage AND detectable true-scale pixels
+- Temporal detection works on both sky and terrain backgrounds (static texture
+  cancels in frame differencing)
+- Holds under realistic perturbation (jitter ≤1.5px, shimmer ≤2.0)
+- Conclusion flips to "marginal" at flux≈8–10 (2× below assumed)
+- Viewing geometry (sky fraction ~47% for ground cameras) is moot — frame
+  diff eliminates static texture regardless
+
+**What M1 did NOT settle:**
+- Actual drone reflectance / sensor flux (flux≈16 is derived, not measured)
+- Real platform jitter characteristics (ground mast vs airborne)
+- Multi-camera temporal fusion (single-camera analysis only)
+- Matched-filter detection (template correlation, not tested)
 
 **Core finding:** The binding constraint for triangulation is ≥2-camera
 overlap (every drone seen by ≥2 cameras), NOT pixel resolution. The
@@ -354,59 +377,34 @@ inflated targets learns something operationally meaningless.
 or reported metrics. Any visualization inflation is explicitly separated
 from the dataset pipeline.
 
-### Temporal detection investigation (2026-07-23, updated with real-render validation)
+### Temporal detection investigation (2026-07-23)
 
-**Setup:** Synthetic 90-condition sweep at 24mm FF / 2km standoff / true
-scale (0.5m drones). Actual apparent size is **0.32px** (the 0.58px figure
-from earlier used a stale `FOCAL_PX = 1400`; the real 24mm optics give
-0.32px). PSF modeled as Gaussian with σ=0.7px.
+**Corrected finding (after real-render validation and perturbation testing):**
 
-**Real render validation:** True-scale Cycles renders (64 samples, 1920×1080)
-with actual sky and terrain backgrounds. Measured real noise characteristics:
-- Sky: spatial σ = 0.000 (perfectly uniform)
-- Terrain: spatial σ = 5.07 (texture variation from noise material)
-- Frame-differencing noise at ISO 400: sky 0.57, terrain 0.52 → **ratio 1.1×**
+Temporal detection via frame differencing works on both sky and terrain
+backgrounds at true scale, under realistic deployment perturbations,
+contingent on flux≥8 at the sensor.
 
-**Key finding: temporal detection works on BOTH backgrounds.**
+The initial synthetic analysis showed a 6× background dependence (sky easy,
+terrain hard). This was an artifact: the sky was rendered as a flat constant
+(σ=0.000), not a physical sky. Re-rendered with Blender's physical sky
+model (σ=18.24), the frame-differencing noise ratio is 1.1× — identical on
+both backgrounds. Static texture cancels in frame differencing.
 
-The synthetic model assumed sky σ≈2, terrain σ≈12 (ratio 6×). The real
-renders show the ratio is 1.1× for frame differencing. Why: static terrain
-texture cancels when subtracting consecutive frames — only sensor noise
-remains, which is identical on both backgrounds. The synthetic model was
-comparing spatial variation (texture) to sensor noise — the wrong metric
-for frame-differencing detection.
+Perturbation test (camera jitter, cloud shadows, atmospheric shimmer,
+combined effects) shows the flux≥5 threshold holds under all individual
+perturbations on both backgrounds. Combined moderate perturbations
+(jitter=1.0px + shimmer=5.0) push the threshold to flux≥15 on terrain.
 
-**Detection thresholds (validated against real Cycles renders):**
+**Load-bearing assumption:** flux≈16 for a real 0.5m drone at 2km. This
+is derived from assumed reflectance (10%), atmospheric transmission (~0.85),
+and sensor characteristics — not measured. Sensitivity: at flux=8 (2×
+below assumed), individual perturbations still pass but combined moderate
+effects start failing. The conclusion flips to "marginal" at flux≈8–10.
 
-| Background | Spatial σ | Diff noise σ | Min flux (SNR≥3) | Min flux (SNR≥5) |
-|---|---|---|---|---|
-| Sky | 0.000 | 0.57 | ~2 | ~5 |
-| Terrain | 5.07 | 0.52 | ~2 | ~5 |
-
-A real 0.5m drone at 2km standoff produces flux≈16 against sky — well
-above threshold. Frame differencing detects sub-pixel drones on **both**
-sky and terrain backgrounds with the same flux requirement.
-
-**Background subtraction** also works on both backgrounds at all speeds
-including hover (SNR≥5 at flux≥5), since it learns the static background
-and subtracts it, leaving the drone as foreground.
-
-**Viewing geometry analysis:** Ground camera arrangements at all elevation
-angles achieve ~47% sky fraction (mixed backgrounds). No arrangement
-achieves both full ≥2-view coverage AND sky-dominated backgrounds for the
-5km×5km×1km volume. This is now moot — frame differencing eliminates
-static texture regardless of background type.
-
-**Honest assessment:** Temporal detection (frame differencing) genuinely
-closes the sub-pixel detection gap. It works on both sky and terrain
-backgrounds at true scale with the real threat model (0.5m drones, 5km
-scenario). This is a positive result — the approach survives.
-
-**Focal length audit:** The stale `FOCAL_PX = 1400` converts to 26.25mm
-in the Blender addon (`1400 × 36 / 1920`). M3/M4 renders used 26.25mm
-(internally consistent). M1 sweep used 24mm correctly. No prior
-conclusion changes — the ~9% focal length difference (0.29px vs 0.32px)
-is within the sub-pixel regime.
+Full analysis in `docs/M1_optics_findings.md`. Scripts:
+`temporal_detection.py`, `validate_real_render.py`, `analyze_real_render.py`,
+`perturbation_test.py`, `rerender_sky.py`, `viewing_geometry.py`.
 
 **Sanity check passed:** Same angular resolution → same apparent pixel size
 (validated across full-frame and APS-C sensor classes).
