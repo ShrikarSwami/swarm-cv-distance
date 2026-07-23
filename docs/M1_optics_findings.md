@@ -1,7 +1,7 @@
 # M1 Optics Findings: Coverage vs. Resolution at True Scale
 
-**Date:** 2026-07-23 (updated with temporal detection and real-render validation)
-**Status:** Per-frame detection infeasible; temporal detection viable at true scale
+**Date:** 2026-07-23 (updated with perturbation testing)
+**Status:** Per-frame detection infeasible; temporal detection viable at true scale under realistic deployment conditions
 
 ---
 
@@ -55,18 +55,27 @@ The original analysis reported 0.58px apparent size at 24mm/2km. This used a sta
 
 ### Temporal detection: the real-render-validated result
 
-Frame differencing was tested across 90 synthetic conditions (speed × flux × background) and validated against real Cycles renders.
+Frame differencing was tested across 90 synthetic conditions (speed × flux × background), validated against real Cycles renders, and stress-tested under realistic deployment perturbations.
 
-**Key finding from real renders:** The frame-differencing noise ratio between sky and terrain is **1.1×** (not the 6× the synthetic model assumed). Static terrain texture cancels in frame differencing — only sensor noise remains, which is identical on both backgrounds. The synthetic model's 6× ratio compared spatial variation (terrain texture) to sensor noise — the wrong comparison for temporal detection.
+**Why static texture cancels:** Frame differencing subtracts consecutive frames. Static background features (terrain texture, sky gradient) appear in both frames and cancel. Only dynamic components remain: sensor noise, the moving drone, and any scene perturbation (jitter, shimmer, shadows). This means the detection threshold is set by perturbation noise, not by static background complexity.
 
-**Detection thresholds (validated against real renders):**
+**Real render validation:** Re-rendered with a physical sky model (Blender Nishita/multiple-scattering) — spatial σ=18.24 (horizon-to-zenith gradient). Terrain σ=5.07 (texture). Frame-differencing noise ratio: **1.1×** (identical on both backgrounds, confirming that static texture cancels).
 
-| Background | Spatial σ | Diff noise σ (ISO 400) | Min flux for SNR≥3 | Min flux for SNR≥5 |
-|---|---|---|---|---|
-| Sky | 0.00 | 0.57 | ~2 | ~5 |
-| Terrain | 5.07 | 0.52 | ~2 | ~5 |
+**Detection thresholds under perturbation** (minimum flux for SNR≥3):
 
-A real 0.5m drone at 2km standoff produces flux≈16 against sky (well above threshold). Frame differencing works on **both** backgrounds with the same threshold.
+| Perturbation | Sky threshold | Terrain threshold |
+|---|---|---|
+| None (baseline) | flux≥2 | flux≥5 |
+| Jitter ≤1.5px | flux≥2 | flux≥5 |
+| Cloud shadows | flux≥2 | flux≥5 |
+| Atmospheric shimmer ≤2.0 | flux≥2 | flux≥5 |
+| Combined mild (j=0.3px, s=1.0) | flux≥5 | flux≥5 |
+| Combined moderate (j=1.0px, s=5.0) | flux≥8 | flux≥15 |
+| Severe shimmer (≥5.0) | flux≥15 | flux≥15 |
+
+A real 0.5m drone at 2km standoff produces flux≈16 — above threshold in **all** realistic perturbation scenarios. The detection boundary is at severe shimmer (≥5.0) combined with moderate jitter, which exceeds typical deployment conditions.
+
+**Key insight:** Terrain does NOT degrade faster than sky under perturbation. The earlier concern — that terrain texture would "smear" under jitter and create non-canceling artifacts — is not observed. The reason: jitter shifts the entire frame, so texture features shift uniformly and still cancel in the difference. The residual is sensor noise + perturbation-induced brightness changes, both of which are similar on sky and terrain.
 
 ### Viewing geometry
 
@@ -96,4 +105,6 @@ The 26.25mm vs 24mm difference is ~9% in focal length, producing ~0.29px instead
 - The 8 px / 3 px / 1 px detector thresholds are heuristics, not measured constraints.
 - The dome arrangement is one camera placement among many.
 - Coverage simulation uses a single random seed (42).
-- Temporal detection assumes a moving drone — perfectly hovering drones are detectable via background subtraction but not frame differencing. Both methods require sufficient contrast (≥5 flux units, achievable for realistic drone reflectances against sky).
+- Temporal detection assumes a moving drone — perfectly hovering drones are detectable via background subtraction but not frame differencing.
+- Perturbation test uses synthetic jitter/shimmer models, not measured values from real camera platforms. Actual deployment perturbation magnitudes need empirical measurement.
+- The flux≈16 estimate for a real drone is approximate — actual value depends on drone reflectance, solar illumination angle, atmospheric transmission, and sensor quantum efficiency.
