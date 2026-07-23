@@ -7,3 +7,4 @@ logs/
 # Regeneratable render/detection outputs -- same reasoning as logs/
 stage2_render/output/
 stage2_detect/output/
+dataset/

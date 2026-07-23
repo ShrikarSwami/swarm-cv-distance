@@ -275,4 +275,27 @@ frames on disk (FFV1/MKV master, decode to scratch for training).
 
 ### M2 — Schema implementation + smoke test (2026-07-23)
 
-[In progress]
+**Schema implemented** (`dataset_schema.py`): `clip.npz` stores K, extrinsics,
+positions (float32), meta. Distances and adjacency computed on demand via
+`load_clip(path, d_max)` with tunable D_MAX. FFV1/MKV round-trip verified
+bit-exact (96× compression vs raw).
+
+**Smoke test: 20 clips generated** (2 envs × 2 weather × 5 seeds),
+~3.7s per clip at 32 Cycles samples, 1920×1080, 6 views. Total: ~74s.
+
+**M2 validation finding (critical):** The smoke-test config (50mm at 1000m
+standoff) produces views where individual cameras see only a small patch of
+the5km swarm. The "20/20 in frame" validation result is a projection-bounds
+check (are projected pixel coords within image?), NOT an ID-pass centroid
+match — EXRs were not saved to dataset. The rendered MKV frames show flat
+backgrounds with no visible drones in most views. This is the same
+coverage-vs-resolution tension identified in M1: at 1000m standoff, 50mm
+gives ~40° FOV (~730m view width), far less than the5km swarm extent.
+
+**Implication for M3:** Smoke-test clips need wider-angle lenses (24mm gives
+73.7° FOV) or closer standoff to achieve per-view drone visibility. The M1
+analytical model already maps which configs work; M3 should use those
+validated configs rather than defaulting to 50mm.
+
+**Per-clip render cost:** ~3.7s at 32 samples (1920×1080, 6 views). At 128
+samples (training quality): ~15s/clip estimated. At256 samples: ~30s/clip.
