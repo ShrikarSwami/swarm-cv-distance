@@ -101,11 +101,18 @@ env_result = env_preset.apply(scene)
 
 # Apply weather's sun energy modifier to the existing sun
 weather_preset = get_weather(weather_name)
+sun_found = False
 for obj in bpy.data.objects:
     if obj.type == "LIGHT" and obj.data.type == "SUN":
         obj.data.energy = weather_preset.sun_energy
         obj.data.color = weather_preset.sun_color[:3]
+        sun_found = True
         break
+
+# Debug output
+print(f"[{cfg['clip_name']}] Objects: {[obj.name for obj in bpy.data.objects]}")
+print(f"[{cfg['clip_name']}] Sun found: {sun_found}")
+print(f"[{cfg['clip_name']}] World nodes: {[node.name for node in scene.world.node_tree.nodes] if scene.world and scene.world.use_nodes else 'None'}")
 
 # Place cameras in dome pattern
 SWARM_CENTER = Vector(positions.mean(axis=0).tolist())
