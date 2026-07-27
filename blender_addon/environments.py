@@ -277,7 +277,7 @@ class DesertPreset(EnvironmentPreset):
         self.sun_azimuth_deg = 25.0
 
         # Light atmospheric dust haze
-        self.fog_density = 0.00001
+        self.fog_density = 0.0
         self.fog_color = (0.85, 0.80, 0.65, 1.0)
 
 
@@ -358,7 +358,7 @@ class ForestPreset(EnvironmentPreset):
         self.sun_azimuth_deg = 40.0
 
         # Visible atmospheric haze — moisture in forest air
-        self.fog_density = 0.00003
+        self.fog_density = 0.0
         self.fog_color = (0.65, 0.70, 0.72, 1.0)
 
     def _apply_extra(self, scene):
@@ -416,7 +416,7 @@ class CityPreset(EnvironmentPreset):
         self.sun_azimuth_deg = 35.0
 
         # Urban haze / smog layer
-        self.fog_density = 0.00002
+        self.fog_density = 0.0
         self.fog_color = (0.72, 0.72, 0.74, 1.0)
 
 

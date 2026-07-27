@@ -99,15 +99,30 @@ weather_name = cfg.get("weather", "clear")
 env_preset = get_environment(env_name)
 env_result = env_preset.apply(scene)
 
-# Apply weather's sun energy modifier to the existing sun
+# Apply weather's sun energy modifier and world background color
 weather_preset = get_weather(weather_name)
 sun_found = False
 for obj in bpy.data.objects:
     if obj.type == "LIGHT" and obj.data.type == "SUN":
+        old_energy = obj.data.energy
         obj.data.energy = weather_preset.sun_energy
         obj.data.color = weather_preset.sun_color[:3]
         sun_found = True
+        print(f"[{cfg['clip_name']}] Sun energy: {old_energy} -> {obj.data.energy}")
         break
+
+# Also modify world background color based on weather
+if scene.world and scene.world.use_nodes:
+    bg = scene.world.node_tree.nodes.get("Background")
+    if bg:
+        # Blend environment sky color with weather ambient color
+        env_color = np.array(env_preset.sky_color[:3])
+        weather_color = np.array(weather_preset.ambient_color[:3])
+        # Weight by sun energy ratio (higher energy = more environment color)
+        energy_ratio = weather_preset.sun_energy / 5.0  # normalize to clear sky
+        blended = env_color * energy_ratio + weather_color * (1 - energy_ratio)
+        bg.inputs["Color"].default_value = (*blended, 1.0)
+        print(f"[{cfg['clip_name']}] World BG: {list(bg.inputs['Color'].default_value)}")
 
 # Debug output
 print(f"[{cfg['clip_name']}] Objects: {[obj.name for obj in bpy.data.objects]}")

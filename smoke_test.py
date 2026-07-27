@@ -35,7 +35,7 @@ SMOKE_TEST_CLIPS = [
         "weather": "overcast",
         "formation": "random_cloud",
         "camera_arrangement": "dome_6",
-        "seed": 43,
+        "seed": 42,  # Same seed as desert_clear to isolate weather effect
     },
     {
         "clip_name": "forest_clear",
@@ -43,7 +43,7 @@ SMOKE_TEST_CLIPS = [
         "weather": "clear",
         "formation": "random_cloud",
         "camera_arrangement": "dome_6",
-        "seed": 44,
+        "seed": 42,  # Same seed to isolate environment effect
     },
     {
         "clip_name": "forest_hazy",
@@ -51,7 +51,7 @@ SMOKE_TEST_CLIPS = [
         "weather": "hazy",
         "formation": "random_cloud",
         "camera_arrangement": "dome_6",
-        "seed": 45,
+        "seed": 44,
     },
     {
         "clip_name": "city_dusk",
@@ -70,7 +70,7 @@ DEFAULT_RENDER = {
     "focal_mm": 24,
     "sensor_width_mm": 36.0,
     "resolution": [1920, 1080],
-    "n_views": 6,
+    "n_views": 12,
     "standoff_m": 2000,
     "n_drones": 20,
     "samples": 32,
