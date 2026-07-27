@@ -63,9 +63,9 @@ SMOKE_TEST_CLIPS = [
     },
 ]
 
-# Default render settings
+# Default render settings (matching full sweep)
 DEFAULT_RENDER = {
-    "n_frames": 10,  # Short clips for smoke test
+    "n_frames": 20,
     "fps": 10,
     "focal_mm": 24,
     "sensor_width_mm": 36.0,
@@ -73,7 +73,7 @@ DEFAULT_RENDER = {
     "n_views": 6,
     "standoff_m": 2000,
     "n_drones": 20,
-    "samples": 16,  # Low samples for smoke test
+    "samples": 32,
 }
 
 

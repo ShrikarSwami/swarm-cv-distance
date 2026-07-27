@@ -243,10 +243,10 @@ _FORMATIONS: dict[str, Callable] = {
     "grid": grid_formation,
     "sphere": sphere_formation,
     "herringbone": herringbone_formation,
-    "lightshow_circle": lambda n, **kw: lightshow_formation(n, shape="circle", **kw),
-    "lightshow_star": lambda n, **kw: lightshow_formation(n, shape="star", **kw),
-    "lightshow_spiral": lambda n, **kw: lightshow_formation(n, shape="spiral", **kw),
-    "lightshow_line": lambda n, **kw: lightshow_formation(n, shape="line", **kw),
+    "lightshow_circle": lambda **kw: lightshow_formation(shape="circle", **kw),
+    "lightshow_star": lambda **kw: lightshow_formation(shape="star", **kw),
+    "lightshow_spiral": lambda **kw: lightshow_formation(shape="spiral", **kw),
+    "lightshow_line": lambda **kw: lightshow_formation(shape="line", **kw),
 }
 
 

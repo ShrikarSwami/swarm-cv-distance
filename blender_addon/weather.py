@@ -147,45 +147,31 @@ class WeatherPreset:
         bg.inputs["Strength"].default_value = self.background_strength
         links.new(bg.outputs["Background"], output.inputs["Surface"])
 
-        if self.use_sky_texture:
-            sky = nodes.new("ShaderNodeSkyTexture")
-            sky.location = (-100, 0)
-            sky.sky_type = "NISHITA"
-
-            # Sun parameters
-            sky.sun_size = self.sun_size
-            sky.sun_intensity = self.sun_energy
-            sky.sun_elevation = math.radians(self.sun_elevation_deg)
-            sky.sun_rotation = math.radians(self.sun_rotation_deg)
-
-            # Atmosphere parameters
-            sky.air_density = self.atmosphere_density
-            sky.dust_density = self.dust_density
-            sky.ozone_density = self.ozone_density
-
-            links.new(sky.outputs["Color"], bg.inputs["Color"])
-        else:
-            bg.inputs["Color"].default_value = self.ambient_color
+        # Use simple background color (ShaderNodeSkyTexture not available in Blender 5.1.2)
+        bg.inputs["Color"].default_value = self.ambient_color
 
     def _setup_sun_light(self, scene):
         """Create or update a SUN light matching this preset's parameters."""
         import bpy
 
-        sun_name = "WeatherSun"
+        # Find existing sun light (created by environment preset)
+        sun_obj = None
+        for obj in bpy.data.objects:
+            if obj.type == "LIGHT" and obj.data.type == "SUN":
+                sun_obj = obj
+                break
 
-        # Remove old sun if it exists
-        old = bpy.data.objects.get(sun_name)
-        if old is not None:
-            if old.data and old.data.users == 1:
-                bpy.data.lights.remove(old.data)
-            bpy.data.objects.remove(old, do_unlink=True)
+        # If no sun exists, create one
+        if sun_obj is None:
+            light_data = bpy.data.lights.new("Sun", "SUN")
+            sun_obj = bpy.data.objects.new("Sun", light_data)
+            # Only link if not already linked
+            if sun_obj.name not in scene.collection.objects:
+                scene.collection.objects.link(sun_obj)
 
-        # Create new sun light
-        light_data = bpy.data.lights.new(sun_name, "SUN")
-        light_data.energy = self.sun_energy
-        light_data.color = self.sun_color[:3]  # RGB, ignore alpha
-
-        sun_obj = bpy.data.objects.new(sun_name, light_data)
+        # Update sun parameters
+        sun_obj.data.energy = self.sun_energy
+        sun_obj.data.color = self.sun_color[:3]  # RGB, ignore alpha
 
         # Position sun at a high altitude so rotation determines direction
         sun_obj.location = (0.0, 0.0, 10000.0)
@@ -235,7 +221,8 @@ class ClearPreset(WeatherPreset):
         self.dust_density = 0.0
         self.ozone_density = 0.5
         self.background_strength = 1.0
-        self.use_sky_texture = True
+        self.use_sky_texture = False
+        self.ambient_color = (0.6, 0.7, 0.9, 1.0)  # Clear blue sky
 
 
 class OvercastPreset(WeatherPreset):
@@ -264,7 +251,8 @@ class OvercastPreset(WeatherPreset):
         self.dust_density = 3.0
         self.ozone_density = 0.3
         self.background_strength = 0.8
-        self.use_sky_texture = True
+        self.use_sky_texture = False
+        self.ambient_color = (0.7, 0.7, 0.75, 1.0)  # Grey overcast
 
 
 class HazyPreset(WeatherPreset):
@@ -294,7 +282,8 @@ class HazyPreset(WeatherPreset):
         self.dust_density = 5.0
         self.ozone_density = 0.4
         self.background_strength = 0.9
-        self.use_sky_texture = True
+        self.use_sky_texture = False
+        self.ambient_color = (0.75, 0.75, 0.8, 1.0)  # Hazy grey-blue
 
 
 class DuskPreset(WeatherPreset):
@@ -325,7 +314,8 @@ class DuskPreset(WeatherPreset):
         self.dust_density = 2.0
         self.ozone_density = 0.8
         self.background_strength = 0.6
-        self.use_sky_texture = True
+        self.use_sky_texture = False
+        self.ambient_color = (0.6, 0.3, 0.2, 1.0)  # Warm orange dusk
 
 
 class NightPreset(WeatherPreset):

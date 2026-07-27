@@ -19,6 +19,7 @@ Usage:
     env.apply(scene)
 """
 
+import math
 import mathutils
 
 

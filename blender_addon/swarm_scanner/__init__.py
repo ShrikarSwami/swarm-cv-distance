@@ -59,6 +59,23 @@ except ImportError as exc:  # loaded outside the repo (e.g. via Install...)
     scene_config = None
     _IMPORT_ERROR = str(exc)
 
+# Formation presets live alongside the addon (pure-numpy, no bpy dependency).
+try:
+    from blender_addon import formations as _formations
+except ImportError:
+    # Fallback: direct import when loaded via dev_load.py
+    import importlib
+    _formations_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "formations.py",
+    )
+    if os.path.exists(_formations_path):
+        spec = importlib.util.spec_from_file_location("formations", _formations_path)
+        _formations = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_formations)
+    else:
+        _formations = None
+
 SWARM_COLLECTION = "Swarm Drones"
 DRONE_MESH_NAME = "swarm_drone_mesh"
 DRONE_MATERIAL_NAME = "SwarmDroneBody"
@@ -134,7 +151,23 @@ class SwarmScanSettings(PropertyGroup):
             ("RANDOM_CLOUD", "Random Cloud",
              "Uniform 3D distribution across the full scene volume "
              "(same distribution as Stage 1's make_swarm)"),
-            # Light-show-style presets come later, per the milestone plan.
+            ("GRID", "Grid",
+             "Regular grid of drones spanning the full area, with "
+             "randomised heights"),
+            ("SPHERE", "Sphere",
+             "Drones distributed uniformly on a sphere surface, "
+             "shifted above ground level"),
+            ("HERRINGBONE", "Herringbone",
+             "Staggered-row brick pattern across the area, with "
+             "randomised heights"),
+            ("LIGHTSHOW_CIRCLE", "Light Show: Circle",
+             "Drones equally spaced on a horizontal circle"),
+            ("LIGHTSHOW_STAR", "Light Show: Star",
+             "Alternating inner/outer vertices forming a star pattern"),
+            ("LIGHTSHOW_SPIRAL", "Light Show: Spiral",
+             "Archimedean spiral with increasing altitude"),
+            ("LIGHTSHOW_LINE", "Light Show: Line",
+             "Drones in a straight line along the x-axis"),
         ],
         default="RANDOM_CLOUD",
     )
@@ -278,14 +311,23 @@ class SWARM_OT_generate(Operator):
         # next timer tick).
         context.window_manager.swarm_sim_running = False
 
-        # Only RANDOM_CLOUD exists so far; the enum is the extension point
-        # for the light-show presets milestone.
-        positions = mvt.make_swarm(
-            n_drones=settings.drone_count,
-            area_km=scene_config.AREA_KM,
-            height_range_m=scene_config.HEIGHT_RANGE_M,
-            seed=settings.seed,
-        )
+        formation_name = settings.formation.lower()
+        gen = _formations.get_formation(formation_name) if _formations else None
+        if gen is not None:
+            positions = gen(
+                n_drones=settings.drone_count,
+                area_km=scene_config.AREA_KM,
+                height_range_m=scene_config.HEIGHT_RANGE_M,
+                seed=settings.seed,
+            )
+        else:
+            # random_cloud (or formations module unavailable): use Stage 1
+            positions = mvt.make_swarm(
+                n_drones=settings.drone_count,
+                area_km=scene_config.AREA_KM,
+                height_range_m=scene_config.HEIGHT_RANGE_M,
+                seed=settings.seed,
+            )
 
         _clear_swarm()
         mesh = _build_drone_mesh(scene_config.DRONE_SIZE_M * settings.display_scale)

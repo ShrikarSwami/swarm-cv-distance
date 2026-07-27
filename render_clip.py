@@ -52,21 +52,8 @@ for p in [project_root, addon_dir]:
 import bpy
 from mathutils import Vector, Matrix
 import swarm_scanner
-
-# ---------------------------------------------------------------------------
-# Environment presets (simple lighting/background variations)
-# ---------------------------------------------------------------------------
-
-ENV_PRESETS = {
-    "desert": {"bg_color": (0.8, 0.7, 0.5, 1.0), "sun_energy": 4.0, "sun_color": (1.0, 0.95, 0.8)},
-    "forest": {"bg_color": (0.4, 0.6, 0.4, 1.0), "sun_energy": 3.0, "sun_color": (0.9, 1.0, 0.8)},
-    "city":   {"bg_color": (0.5, 0.5, 0.6, 1.0), "sun_energy": 3.5, "sun_color": (0.95, 0.95, 1.0)},
-}
-WEATHER_PRESETS = {
-    "clear":   {"energy_mult": 1.0},
-    "overcast": {"energy_mult": 0.5},
-    "hazy":    {"energy_mult": 0.7},
-}
+from blender_addon.environments import get_environment
+from blender_addon.weather import get_weather
 
 # ---------------------------------------------------------------------------
 # Generate swarm using addon
@@ -103,26 +90,22 @@ for obj in list(bpy.data.objects):
     if obj.type in ("CAMERA",) or obj.name in ("Cube",):
         bpy.data.objects.remove(obj, do_unlink=True)
 
-# Keep or create light
-env = ENV_PRESETS.get(cfg.get("environment", "desert"), ENV_PRESETS["desert"])
-weather = WEATHER_PRESETS.get(cfg.get("weather", "clear"), WEATHER_PRESETS["clear"])
+# Apply environment and weather presets
+# Apply environment first to create ground plane and sun light
+# Then apply weather to modify sun energy and world background
+env_name = cfg.get("environment", "desert")
+weather_name = cfg.get("weather", "clear")
 
-has_light = any(o.type == "LIGHT" for o in bpy.data.objects)
-if not has_light:
-    light_data = bpy.data.lights.new("Sun", "SUN")
-    light_data.energy = env["sun_energy"] * weather["energy_mult"]
-    light_data.color = env["sun_color"][:3]
-    light_obj = bpy.data.objects.new("Sun", light_data)
-    light_obj.location = (0, 0, 10000)
-    bpy.context.collection.objects.link(light_obj)
+env_preset = get_environment(env_name)
+env_result = env_preset.apply(scene)
 
-# Set world background
-world = bpy.data.worlds.get("World") or bpy.data.worlds.new("World")
-scene.world = world
-world.use_nodes = True
-bg = world.node_tree.nodes.get("Background")
-if bg:
-    bg.inputs[0].default_value = env["bg_color"]
+# Apply weather's sun energy modifier to the existing sun
+weather_preset = get_weather(weather_name)
+for obj in bpy.data.objects:
+    if obj.type == "LIGHT" and obj.data.type == "SUN":
+        obj.data.energy = weather_preset.sun_energy
+        obj.data.color = weather_preset.sun_color[:3]
+        break
 
 # Place cameras in dome pattern
 SWARM_CENTER = Vector(positions.mean(axis=0).tolist())
@@ -164,6 +147,10 @@ for i in range(n_views):
     mat[0][2], mat[1][2], mat[2][2] = -forward.x, -forward.y, -forward.z
     mat[0][3], mat[1][3], mat[2][3] = cam_pos.x, cam_pos.y, cam_pos.z
     cam_obj.matrix_world = mat
+
+    # Force update matrix_world
+    bpy.context.view_layer.update()
+    bpy.context.evaluated_depsgraph_get().update()
 
     cam_data_list.append(cam_obj)
 
