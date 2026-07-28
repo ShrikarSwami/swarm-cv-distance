@@ -54,6 +54,10 @@ def main():
     scene.render.image_settings.file_format = 'PNG'
     scene.render.image_settings.color_mode = 'RGBA'
 
+    # Keep default AgX view transform - it helps compress tonal range
+    # Standard transform makes overexposure worse, not better
+    print(f"  view_transform: {scene.view_settings.view_transform}")
+
     # Step 2: Apply environment preset (creates ground plane, sun light)
     print("\n[2] Applying environment preset")
     from blender_addon.environments import get_environment
