@@ -85,7 +85,7 @@ def download_hdri(asset_id: str) -> Path:
         raise RuntimeError(f"Failed to fetch asset info from Poly Haven: {e}")
 
     # Get download URL for 2k resolution .exr
-    if "hdri" not in asset_info or "0k" not in asset_info.get("hdri", {}):
+    if "hdri" not in asset_info or "2k" not in asset_info.get("hdri", {}):
         # Try to find any available resolution
         hdri_info = asset_info.get("hdri", {})
         available_resolutions = [k for k in hdri_info.keys() if k.endswith("k")]
