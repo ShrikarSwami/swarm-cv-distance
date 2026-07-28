@@ -112,36 +112,17 @@ def main():
         # Set object index for EXR pass
         cube.pass_index = i + 1
 
-    # Step 7: Configure compositor for EXR with Object Index pass
-    print("\n[7] Configuring compositor for EXR with Object Index pass")
-    scene.use_nodes = True
-    tree = scene.node_tree
-    tree.nodes.clear()
-
-    # Render Layers node
-    rl = tree.nodes.new("CompositorNodeRLayers")
-    rl.location = (0, 0)
-
-    # Output File node for EXR multilayer
-    out = tree.nodes.new("CompositorNodeOutputFile")
-    out.location = (200, 0)
-    out.filepath = str(OUTPUT_DIR / "render") + "/"
-    out.file_slots[0].path = "render"
-    out.format.file_format = "OPEN_EXR_MULTILAYER"
-    out.format.color_depth = "32"
-
-    # Connect Image output
-    tree.links.new(rl.outputs["Image"], out.inputs["Image"])
-
-    # Connect Object Index output (IndexOB)
-    tree.links.new(rl.outputs["IndexOB"], out.inputs[1])  # Second input is for extra passes
+    # Step 7: Configure render passes for EXR with Object Index
+    print("\n[7] Configuring render passes for EXR with Object Index")
+    # Enable Object Index pass in view layer (Blender 5.2 API)
+    bpy.context.view_layer.use_pass_object_index = True
 
     # Step 8: Render single frame as EXR (for data analysis)
     print("\n[8] Rendering single frame as EXR")
     render_start = time.time()
 
     scene.render.filepath = str(OUTPUT_DIR / "render.exr")
-    scene.render.image_settings.file_format = "OPEN_EXR_MULTILAYER"
+    scene.render.image_settings.file_format = "OPEN_EXR"
     scene.render.image_settings.color_depth = "32"
     bpy.ops.render.render(write_still=True)
 
