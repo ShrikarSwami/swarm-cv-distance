@@ -1,15 +1,35 @@
 swarm-cv-distance -- launching the Swarm Scan addon
 ====================================================
 
-Normal launch
--------------
+Normal launch (macOS)
+---------------------
 Double-click "Swarm Scanner.app" at the repo root. It finds Blender
 (Steam install, /Applications, or ~/Applications, in that order) and opens
 it with the addon loaded. The "Swarm Scan" tab is in the 3D viewport
 sidebar -- press N if the sidebar is hidden.
 
-Manual launch (fallback / debugging)
-------------------------------------
+Linux
+-----
+There is no .app bundle on Linux. Instead a packaged setup installs Blender
+from the official tarball and wires the addon to load on every launch:
+
+  ./linux_quickstart/make_package.sh          # builds dist/swarm-scan-linux.zip
+  cd linux_quickstart/dist/swarm-scan-linux
+  ./setup_linux.sh                            # installs Blender 5.2.0 to ~/blender, no sudo
+  python3 check_env.py                        # optional: GPU / driver report
+  ~/blender/blender                           # opens with the addon already loaded
+
+setup_linux.sh must run from inside the built package -- it expects
+blender_addon/ next to it, which is what make_package.sh assembles.
+
+That tooling is not on main yet. It lives on the Linux quickstart branch
+(environment analyzer + step-by-step install), along with a longer
+walkthrough in linux_quickstart/README_LINUX.md:
+
+  https://github.com/ShrikarSwami/swarm-cv-distance/tree/linux-quickstart
+
+Manual launch, macOS (fallback / debugging)
+-------------------------------------------
 Same thing the app does, as a plain command:
 
   "$HOME/Library/Application Support/Steam/steamapps/common/Blender/Blender.app/Contents/MacOS/Blender" \
