@@ -151,19 +151,19 @@ def main():
     # Check available outputs from Render Layers node
     print(f"  Render Layers outputs: {[out.name for out in rl.outputs]}")
 
-    # Output File node for Object Index
+    # Output File node for Object Index (CompositorNodeOutputFile only supports OPEN_EXR_MULTILAYER)
     out = tree.nodes.new("CompositorNodeOutputFile")
     out.location = (200, 0)
     out.directory = str(OUTPUT_DIR / "render_obj_index") + "/"
     out.file_name = "obj_index"
-    # CompositorNodeOutputFile only supports OPEN_EXR_MULTILAYER
-    out.format.file_format = "OPEN_EXR_MULTILAYER"
+    out.format.file_format = "OPEN_EXR_MULTILAYER"  # Only format supported by CompositorNodeOutputFile
     out.format.color_depth = "32"
+    print(f"  Compositor output format: {out.format.file_format}")
 
     # Connect Object Index output if available
     if "Object Index" in [out.name for out in rl.outputs]:
         tree.links.new(rl.outputs["Object Index"], out.inputs[0])
-        print("  Connected Object Index output")
+        print("  Connected Object Index output to compositor")
     else:
         print("  Object Index output not found in Render Layers node")
         print(f"  Available outputs: {[out.name for out in rl.outputs]}")
@@ -173,8 +173,10 @@ def main():
     render_start = time.time()
 
     scene.render.filepath = str(OUTPUT_DIR / "render.exr")
+    # Main render output only supports OPEN_EXR (single layer)
     scene.render.image_settings.file_format = "OPEN_EXR"
     scene.render.image_settings.color_depth = "32"
+    print(f"  Main render format: {scene.render.image_settings.file_format}")
     bpy.ops.render.render(write_still=True)
 
     exr_time = time.time() - render_start
