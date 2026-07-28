@@ -32,7 +32,7 @@ find_blender() {
 BLENDER="$(find_blender || true)"
 if [[ -z "$BLENDER" ]]; then
   echo "ERROR: could not find Blender."
-  echo "Install it (see README_BOSS.md step 1), or point this script at it:"
+  echo "Install it (see README_LINUX.md step 1), or point this script at it:"
   echo "    SWARM_BLENDER=/full/path/to/blender ./launch.sh"
   exit 1
 fi

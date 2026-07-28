@@ -10,14 +10,14 @@ When you're done, Blender opens with the tool already loaded — every time.
 
 ## Step 1 — Go into the folder
 
-You were given a file **`swarm-scan-boss.zip`** (it's in your Downloads).
+You were given a file **`swarm-scan-linux.zip`** (it's in your Downloads).
 Unzip it and go inside:
 
 ```bash
-cd ~/Downloads && unzip -o swarm-scan-boss.zip && cd swarm-scan-boss
+cd ~/Downloads && unzip -o swarm-scan-linux.zip && cd swarm-scan-linux
 ```
 
-**You should see:** your terminal prompt now ends in `swarm-scan-boss`.
+**You should see:** your terminal prompt now ends in `swarm-scan-linux`.
 
 ---
 
@@ -68,7 +68,7 @@ That's everything. To open it again later, just do Step 3.
 Renders are faster with a supported NVIDIA card. To check:
 
 ```bash
-cd ~/Downloads/swarm-scan-boss && python3 check_env.py
+cd ~/Downloads/swarm-scan-linux && python3 check_env.py
 ```
 
 Read the last line (starts with `>>`):

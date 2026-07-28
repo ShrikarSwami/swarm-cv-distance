@@ -100,7 +100,7 @@ def check_blender():
     if not exe:
         bad("Blender not found (checked PATH, /opt/blender, /usr/local/bin, "
             "~/blender, Downloads, macOS app locations).")
-        info("You need to install it -- see README_BOSS.md, step 1.")
+        info("You need to install it -- see README_LINUX.md, step 1.")
         return None, None
     rc, out = run([exe, "--version"])
     ver = parse_version(out)
@@ -247,12 +247,12 @@ def check_disk():
 def verdict(blender_ver, cycles_gpu):
     head("VERDICT")
     if blender_ver is None:
-        print("  >> NOT READY: install Blender first (README_BOSS.md, step 1),")
+        print("  >> NOT READY: install Blender first (README_LINUX.md, step 1),")
         print("     then run this checker again.")
         return
     if blender_ver < MIN_BLENDER:
         print("  >> NOT READY: your Blender is too old. Install a newer one")
-        print("     (README_BOSS.md, step 1), then re-run this checker.")
+        print("     (README_LINUX.md, step 1), then re-run this checker.")
         return
     if cycles_gpu is True:
         print("  >> YOU'RE READY. GPU rendering is available (the fast path).")
@@ -264,7 +264,7 @@ def verdict(blender_ver, cycles_gpu):
         print("  >> ALMOST READY. Blender is installed but the GPU check didn't")
         print("     complete. You can still launch the addon (README 'Launch the addon').")
     print()
-    print("  Next: follow README_BOSS.md 'Launch the addon'.")
+    print("  Next: follow README_LINUX.md 'Launch the addon'.")
 
 
 def main():
