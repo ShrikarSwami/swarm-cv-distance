@@ -145,9 +145,9 @@ mesh.update()
 dmat = bpy.data.materials.new("drone_mat")
 dmat.use_nodes = True
 dbsdf = dmat.node_tree.nodes.get("Principled BSDF")
-dbsdf.inputs["Emission Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+dbsdf.inputs["Emission Color"].default_value = (0.15, 0.18, 0.22, 1.0)  # near-black, slight blue-grey
 dbsdf.inputs["Emission Strength"].default_value = 100.0
-dbsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+dbsdf.inputs["Base Color"].default_value = (0.08, 0.09, 0.12, 1.0)  # dark base
 mesh.materials.append(dmat)
 
 # --- HORIZONTAL cameras (show sky + horizon) ---

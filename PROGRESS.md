@@ -570,3 +570,38 @@ of likely impact:
 **M5 is conditional.** Run M4 first. If the classical pipeline achieves
 ≥90% detection rate with ≤5% false-positive rate, M5 is optional
 optimization, not a requirement.
+
+## Visualization clip (2026-07-27)
+
+**This is a visualization only, not training data.** Parameters differ from the
+validated detection pipeline:
+
+| Parameter | Visualization clip | Detection pipeline |
+|-----------|-------------------|-------------------|
+| Display scale | 20× (inflated) | 1× (true scale) |
+| Render engine | EEVEE | Cycles |
+| Resolution | 1280×720 | 1920×1080 |
+| Frame rate | 30fps | 24fps |
+| Duration | 30s (900 frames) | 45s (1080 frames) |
+| Sky | Gradient (procedural) | Physical/weather presets |
+| Ground | Noise texture | Environment presets |
+| Drone color | Dark blue-grey (0.15, 0.18, 0.22) | Emission white |
+| Ground truth | None | ID pass + extrinsics |
+| Output | MP4/H.264 | FFV1/MKV + clip.npz |
+
+**Root cause of invisible drones (fixed):** `bpy.data.objects.new()` creates
+objects that Cycles/EEVEE don't evaluate for rendering. Must use
+`bpy.ops.mesh.primitive_cube_add()` instead. This affected ALL render paths
+(render_clip.py, inline_dome_render.py, smoke tests).
+
+**Render settings:** EEVEE, 0.7–0.8s/frame at 1280×720. 6 cameras × 900
+frames = 5,400 total. Estimated ~60 minutes.
+
+**Still open for dataset pipeline:**
+- True-scale drones (0.5m) are sub-pixel at validated standoff — detection
+  viability requires temporal methods, not per-frame detection
+- Camera geometry validated (12 cameras, 2km standoff, ≥2 views per drone)
+- Environment/weather presets verified visually distinct
+- Fog disabled (volumetric scatter at 0.00001 density blacks out 5km scenes)
+- `bpy.data.objects.new()` bug must be fixed in render_clip.py for dataset
+- Output root configurable at runtime via `--output-root` argument
