@@ -116,9 +116,48 @@ def main():
     print("\n[7] Configuring render passes for EXR with Object Index")
     # Enable Object Index pass in view layer (Blender 5.2 API)
     bpy.context.view_layer.use_pass_object_index = True
+    print(f"  use_pass_object_index: {bpy.context.view_layer.use_pass_object_index}")
 
-    # Step 8: Render single frame as EXR (for data analysis)
-    print("\n[8] Rendering single frame as EXR")
+    # Force view layer update to ensure pass is registered
+    bpy.context.view_layer.update()
+
+    # Step 8: Configure compositor to output Object Index pass
+    print("\n[8] Configuring compositor for Object Index output")
+    scene.use_nodes = True
+
+    # Get or create compositor node group
+    tree = scene.compositing_node_group
+    if tree is None:
+        tree = bpy.data.node_groups.new("CompositorNodeTree", 'CompositorNodeTree')
+        scene.compositing_node_group = tree
+    tree.nodes.clear()
+
+    # Render Layers node - MUST be created AFTER use_pass_object_index is enabled
+    rl = tree.nodes.new("CompositorNodeRLayers")
+    rl.location = (0, 0)
+
+    # Check available outputs from Render Layers node
+    print(f"  Render Layers outputs: {[out.name for out in rl.outputs]}")
+
+    # Output File node for Object Index
+    out = tree.nodes.new("CompositorNodeOutputFile")
+    out.location = (200, 0)
+    out.directory = str(OUTPUT_DIR / "render_obj_index") + "/"
+    out.file_name = "obj_index"
+    # CompositorNodeOutputFile only supports OPEN_EXR_MULTILAYER
+    out.format.file_format = "OPEN_EXR_MULTILAYER"
+    out.format.color_depth = "32"
+
+    # Connect Object Index output if available
+    if "Object Index" in [out.name for out in rl.outputs]:
+        tree.links.new(rl.outputs["Object Index"], out.inputs[0])
+        print("  Connected Object Index output")
+    else:
+        print("  Object Index output not found in Render Layers node")
+        print(f"  Available outputs: {[out.name for out in rl.outputs]}")
+
+    # Step 9: Render single frame as EXR (for data analysis)
+    print("\n[9] Rendering single frame as EXR")
     render_start = time.time()
 
     scene.render.filepath = str(OUTPUT_DIR / "render.exr")
