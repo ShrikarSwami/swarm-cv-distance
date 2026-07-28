@@ -10,14 +10,13 @@ sidebar -- press N if the sidebar is hidden.
 
 Linux
 -----
-There is no .app bundle on Linux. Instead a packaged setup installs Blender
-from the official tarball and wires the addon to load on every launch:
+There is no .app bundle on Linux. Run the one-command setup from the repo root:
 
-  ./linux_quickstart/make_package.sh          # builds dist/swarm-scan-linux.zip
-  cd linux_quickstart/dist/swarm-scan-linux
-  ./setup_linux.sh                            # installs Blender 5.2.0 to ~/blender, no sudo
-  python3 check_env.py                        # optional: GPU / driver report
-  ~/blender/blender                           # opens with the addon already loaded
+  ./setup_linux.sh                     # installs Blender 5.2.0 to ~/blender, no sudo
+  python3 linux_quickstart/check_env.py  # optional: GPU / driver report
+  ~/blender/blender                    # opens with the addon already loaded
+
+That's it — no zip, no extra steps, run right after git clone.
 
 setup_linux.sh must run from inside the built package -- it expects
 blender_addon/ next to it, which is what make_package.sh assembles.

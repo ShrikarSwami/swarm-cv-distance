@@ -1,29 +1,18 @@
 # Swarm Scan — Linux setup (the easy way)
 
-Three commands. Copy each line, paste it into a terminal, press Enter.
-When you're done, Blender opens with the tool already loaded — every time.
+One command from a fresh git clone. When you're done, Blender opens with
+the tool already loaded — every time.
 
 > **Open a terminal:** press the **Super/Windows key**, type `terminal`,
 > press Enter.
 
 ---
 
-## Step 1 — Go into the folder
-
-You were given a file **`swarm-scan-linux.zip`** (it's in your Downloads).
-Unzip it and go inside:
+## Step 1 — Clone and run
 
 ```bash
-cd ~/Downloads && unzip -o swarm-scan-linux.zip && cd swarm-scan-linux
-```
-
-**You should see:** your terminal prompt now ends in `swarm-scan-linux`.
-
----
-
-## Step 2 — Run the setup (this installs everything)
-
-```bash
+git clone https://github.com/ShrikarSwami/swarm-cv-distance.git
+cd swarm-cv-distance
 ./setup_linux.sh
 ```
 
@@ -33,7 +22,7 @@ It never asks for a password and doesn't change anything else on your computer.
 
 ---
 
-## Step 3 — Open it
+## Step 2 — Open it
 
 ```bash
 ~/blender/blender
@@ -59,7 +48,7 @@ Inside the Blender window:
 
 To look around: hold the **middle mouse button** and drag to rotate; scroll to zoom.
 
-That's everything. To open it again later, just do Step 3.
+That's everything. To open it again later, just do Step 2.
 
 ---
 
@@ -68,7 +57,7 @@ That's everything. To open it again later, just do Step 3.
 Renders are faster with a supported NVIDIA card. To check:
 
 ```bash
-cd ~/Downloads/swarm-scan-linux && python3 check_env.py
+python3 linux_quickstart/check_env.py
 ```
 
 Read the last line (starts with `>>`):

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # One-command setup for the Swarm Scan Blender addon on Linux.
 #
+# Run this immediately after cloning the repo, no prior build step needed:
+#
 #   ./setup_linux.sh
 #
-# It does everything, no sudo:
-#   1. installs Blender 5.2.0 into ~/blender (skips if already there)
-#   2. makes the Swarm Scan addon load automatically EVERY time Blender opens
-#   3. adds a `blender` command and an app-menu icon
-#   4. verifies the addon loaded, then tells you how to open it
+# It does everything:
+#   1. Installs Blender 5.2.0 into ~/blender (skips if already there)
+#   2. Makes the Swarm Scan addon load automatically EVERY time Blender opens
+#   3. Adds a `blender` command and an app-menu icon
+#   4. Verifies the addon loaded, then tells you how to open it
 set -euo pipefail
 
 BVER="5.2.0"
@@ -16,14 +18,15 @@ BIN="$BDIR/blender"
 TARBALL="blender-${BVER}-linux-x64.tar.xz"
 URL="https://download.blender.org/release/Blender5.2/${TARBALL}"
 
-# Where THIS script (and the addon next to it) actually live.
-PKG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ADDON_DIR="$PKG/blender_addon"
+# The repo root is where this script lives (git clone root).
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ADDON_DIR="$REPO_ROOT/blender_addon"
 
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 fail() { printf '\n\033[31mERROR: %s\033[0m\n' "$1" >&2; exit 1; }
 
-[ -f "$ADDON_DIR/dev_load.py" ] || fail "blender_addon/ not found next to this script. Unzip the whole package and run it from inside that folder."
+[ -f "$ADDON_DIR/dev_load.py" ] \
+  || fail "blender_addon/ not found. Make sure you're at the repo root."
 
 # --- 1. Blender ------------------------------------------------------------
 if [ -x "$BIN" ] && "$BIN" --version 2>/dev/null | grep -q "Blender ${BVER}"; then
@@ -95,9 +98,7 @@ echo "  added 'blender' command and a 'Blender (Swarm Scan)' menu icon"
 # --- 4. verify -------------------------------------------------------------
 say "Verifying the addon loads ..."
 # Reliable check: the registered panel/operator types appear in bpy.types.
-# Type name comes from bl_idname (swarm.generate_swarm -> SWARM_OT_generate_swarm),
-# NOT the Python class name. Do NOT use hasattr(bpy.ops.swarm, ...) -- bpy.ops
-# fabricates a proxy for any name, so it is always True even with nothing loaded.
+# Do NOT use hasattr(bpy.ops.swarm, ...) -- bpy.ops always fabricates a proxy.
 if "$BIN" -b --python-expr "import bpy;print('CHECK:'+str(hasattr(bpy.types,'SWARM_PT_panel')))" 2>/dev/null | grep -q "CHECK:True"; then
   echo "  OK — Swarm Scan loads automatically."
 else
@@ -117,5 +118,8 @@ cat <<DONE
   When Blender opens, the addon is ALREADY loaded:
     move the mouse over the 3D view, press  N , and click the
     "Swarm Scan" tab on the right.
+
+  Optional post-setup checks:
+    python3 linux_quickstart/check_env.py
 ============================================================
 DONE
