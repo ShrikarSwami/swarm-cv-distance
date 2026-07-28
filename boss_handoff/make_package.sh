@@ -22,10 +22,11 @@ cp "$REPO/stage1_geometry/scene_config.py" "$STAGE/stage1_geometry/"
 cp "$REPO/stage1_geometry/multiview_triangulation_test.py" "$STAGE/stage1_geometry/"
 
 # 3. boss-facing files
-cp "$REPO/boss_handoff/check_env.py" "$STAGE/"
-cp "$REPO/boss_handoff/launch.sh"    "$STAGE/"
-cp "$REPO/boss_handoff/README_BOSS.md" "$STAGE/README.md"
-chmod +x "$STAGE/launch.sh"
+cp "$REPO/boss_handoff/check_env.py"    "$STAGE/"
+cp "$REPO/boss_handoff/launch.sh"       "$STAGE/"     # manual-launch fallback
+cp "$REPO/boss_handoff/setup_linux.sh"  "$STAGE/"     # one-command installer
+cp "$REPO/boss_handoff/README_Linux.md" "$STAGE/README.md"
+chmod +x "$STAGE/launch.sh" "$STAGE/setup_linux.sh"
 
 # strip caches
 find "$STAGE" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
