@@ -43,7 +43,7 @@ PRESETS: Dict[str, HDPreset] = {
     ),
     "overcast": HDPreset(
         name="overcast",
-        asset_id="kloofendal_43d_clear_puresky",
+        asset_id="kloofendal_43d_clear_puresky",  # NOTE: This is a CLEAR sky HDRI, not overcast
         sun_azimuth=0.0,
         sun_elevation=45.0,
         strength=0.8,
