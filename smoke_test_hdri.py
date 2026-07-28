@@ -92,7 +92,7 @@ def main():
         cube = bpy.context.object
         cube.name = f"Drone_{i:02d}"
 
-        # Assign emission material
+        # Assign emission material (reduced strength to avoid overexposure)
         mat = bpy.data.materials.new(f"DroneMat_{i:02d}")
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
@@ -101,7 +101,7 @@ def main():
             nodes.remove(node)
 
         emission = nodes.new("ShaderNodeEmission")
-        emission.inputs["Strength"].default_value = 10.0
+        emission.inputs["Strength"].default_value = 2.0  # Reduced from 10.0
         emission.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
         output = nodes.new("ShaderNodeOutputMaterial")
         output.location = (200, 0)
@@ -112,19 +112,43 @@ def main():
         # Set object index for EXR pass
         cube.pass_index = i + 1
 
-    # Step 7: Render single frame as EXR (for data analysis)
-    print("\n[7] Rendering single frame as EXR")
+    # Step 7: Configure compositor for EXR with Object Index pass
+    print("\n[7] Configuring compositor for EXR with Object Index pass")
+    scene.use_nodes = True
+    tree = scene.node_tree
+    tree.nodes.clear()
+
+    # Render Layers node
+    rl = tree.nodes.new("CompositorNodeRLayers")
+    rl.location = (0, 0)
+
+    # Output File node for EXR multilayer
+    out = tree.nodes.new("CompositorNodeOutputFile")
+    out.location = (200, 0)
+    out.filepath = str(OUTPUT_DIR / "render") + "/"
+    out.file_slots[0].path = "render"
+    out.format.file_format = "OPEN_EXR_MULTILAYER"
+    out.format.color_depth = "32"
+
+    # Connect Image output
+    tree.links.new(rl.outputs["Image"], out.inputs["Image"])
+
+    # Connect Object Index output (IndexOB)
+    tree.links.new(rl.outputs["IndexOB"], out.inputs[1])  # Second input is for extra passes
+
+    # Step 8: Render single frame as EXR (for data analysis)
+    print("\n[8] Rendering single frame as EXR")
     render_start = time.time()
 
     scene.render.filepath = str(OUTPUT_DIR / "render.exr")
-    scene.render.image_settings.file_format = "OPEN_EXR"
+    scene.render.image_settings.file_format = "OPEN_EXR_MULTILAYER"
     scene.render.image_settings.color_depth = "32"
     bpy.ops.render.render(write_still=True)
 
     exr_time = time.time() - render_start
 
-    # Step 8: Render single frame as PNG (for visual inspection)
-    print("\n[8] Rendering single frame as PNG")
+    # Step 9: Render single frame as PNG (for visual inspection)
+    print("\n[9] Rendering single frame as PNG")
     scene.render.filepath = str(OUTPUT_DIR / "render.png")
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
@@ -141,9 +165,11 @@ def main():
     print(f"  Total render time: {render_time:.2f}s")
     print(f"  Total script time: {total_time:.2f}s")
 
-    # Step 9: Analyze EXR multilayer pass
-    print("\n[9] Analyzing EXR multilayer pass")
-    exr_path = OUTPUT_DIR / "render.exr"
+    # Step 10: Analyze EXR multilayer pass
+    print("\n[10] Analyzing EXR multilayer pass")
+    exr_path = OUTPUT_DIR / "render" / "render0001.exr"
+    if not exr_path.exists():
+        exr_path = OUTPUT_DIR / "render.exr"
     if exr_path.exists():
         exr_size = exr_path.stat().st_size
         print(f"  EXR file: {exr_path}")
@@ -155,8 +181,8 @@ def main():
     else:
         print("  EXR file not found")
 
-    # Step 10: Analyze PNG render
-    print("\n[10] Analyzing PNG render")
+    # Step 11: Analyze PNG render
+    print("\n[11] Analyzing PNG render")
 
     # Load rendered image
     render_path = OUTPUT_DIR / "render.png"
@@ -183,7 +209,7 @@ def main():
 
         # Check if drones are visible (relative comparison)
         diff = np.abs(center_mean - bg_mean).max()
-        if diff > 1.0:  # At least 1 unit difference in 0-255 range
+        if diff > 5.0:  # At least 5 unit difference in 0-255 range
             print(f"  ✓ Drones visible against sky (diff={diff:.2f})")
         else:
             print(f"  ✗ Drones not distinguishable from sky (diff={diff:.2f})")
@@ -191,11 +217,45 @@ def main():
     else:
         print("  PNG render not found")
 
-    # Shadow direction check (visual inspection required)
-    print("\n  Shadow direction check:")
-    print("  - Visually inspect shadows on ground plane")
-    print("  - Confirm shadows point toward HDRI's bright region")
-    print("  - This requires human verification of the rendered image")
+    # Step 12: Shadow direction check (programmatic)
+    print("\n[12] Shadow direction check")
+    if render_path.exists():
+        # Analyze shadow direction by looking at ground plane
+        # Shadows should be cast in the direction opposite to the HDRI's bright region
+        # For "clear" preset with sun_azimuth=45°, shadows should point toward 225° (southwest)
+
+        # Find darker regions below drones (shadows)
+        drone_y = h // 2  # Approximate drone row
+        shadow_region = img[drone_y+50:drone_y+100, :, :3]  # Below drones
+
+        # Find the darkest row in shadow region (actual shadow)
+        row_means = shadow_region.mean(axis=(1,2))
+        darkest_row_idx = np.argmin(row_means)
+        shadow_row = shadow_region[darkest_row_idx]
+
+        # Find left vs right brightness to determine shadow direction
+        left_half = shadow_row[:w//2]
+        right_half = shadow_row[w//2:]
+        left_mean = left_half.mean()
+        right_mean = right_half.mean()
+
+        print(f"  Shadow left half mean: {left_mean:.2f}")
+        print(f"  Shadow right half mean: {right_mean:.2f}")
+
+        if left_mean < right_mean:
+            print(f"  Shadow cast toward LEFT (west)")
+            shadow_direction = "west"
+        else:
+            print(f"  Shadow cast toward RIGHT (east)")
+            shadow_direction = "east"
+
+        # Expected: for sun_azimuth=45° (northeast), shadows should point southwest (225°)
+        # This means shadows should be cast toward the left (west) side
+        expected_direction = "west"
+        if shadow_direction == expected_direction:
+            print(f"  ✓ Shadow direction matches expected (sun_azimuth=45° → shadows toward southwest)")
+        else:
+            print(f"  ✗ Shadow direction mismatch: got {shadow_direction}, expected {expected_direction}")
 
     # Step 11: Report results
     print("\n" + "=" * 70)
