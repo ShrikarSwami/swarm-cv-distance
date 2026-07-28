@@ -62,20 +62,18 @@ from blender_addon.weather import get_weather
 t_start = time.time()
 
 DISPLAY_SCALE = cfg.get("display_scale", 20.0)
-swarm_scanner.register()
-scene = bpy.context.scene
-scene.swarm_scan.drone_count = 20
-scene.swarm_scan.seed = cfg["seed"]
-scene.swarm_scan.display_scale = DISPLAY_SCALE
-scene.swarm_scan.camera_count = 2
-bpy.ops.swarm.generate_swarm()
+n_drones = cfg.get("n_drones", 20)
 
-drones = sorted(
-    [o for o in bpy.data.objects if o.type == "MESH" and o.name.startswith("drone_")],
-    key=lambda o: o.name,
+# Generate drone positions using make_swarm
+from stage1_geometry import multiview_triangulation_test as mvt
+import scene_config
+scene = bpy.context.scene
+positions = mvt.make_swarm(
+    n_drones=n_drones,
+    area_km=scene_config.AREA_KM,
+    height_range_m=scene_config.HEIGHT_RANGE_M,
+    seed=cfg["seed"],
 )
-positions = np.array([o.location[:] for o in drones])  # (N, 3)
-n_drones = len(drones)
 print(f"[{cfg['clip_name']}] {n_drones} drones, display_scale={DISPLAY_SCALE}")
 
 # Store ground-truth positions at true scale (not inflated)
@@ -89,6 +87,29 @@ gt_positions = positions / DISPLAY_SCALE  # back to true 0.5m drone positions
 for obj in list(bpy.data.objects):
     if obj.type in ("CAMERA",) or obj.name in ("Cube",):
         bpy.data.objects.remove(obj, do_unlink=True)
+
+# Create emission material
+emission_mat = bpy.data.materials.new("drone_emission")
+emission_mat.use_nodes = True
+ebsdf = emission_mat.node_tree.nodes.get("Principled BSDF")
+if ebsdf:
+    ebsdf.inputs["Emission Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    ebsdf.inputs["Emission Strength"].default_value = 100.0
+    ebsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+
+# Create drones with bpy.ops (required for Cycles/EEVEE evaluation)
+for i, pos in enumerate(positions):
+    bpy.ops.mesh.primitive_cube_add(size=DISPLAY_SCALE * 0.5, location=pos.tolist())
+    obj = bpy.context.active_object
+    obj.name = f"drone_{i:03d}"
+    obj.data.materials.clear()
+    obj.data.materials.append(emission_mat)
+    obj.pass_index = i + 1
+
+# Verify
+drone_count = sum(1 for o in bpy.data.objects if o.name.startswith("drone_"))
+print(f"[{cfg['clip_name']}] Drones created: {drone_count}")
+print(f"[{cfg['clip_name']}] Emission mat users: {emission_mat.users}")
 
 # Apply environment and weather presets
 # Apply environment first to create ground plane and sun light
@@ -198,6 +219,9 @@ scene.cycles.use_denoising = False
 scene.render.resolution_x = h_px
 scene.render.resolution_y = v_px
 scene.render.resolution_percentage = 100
+
+# Standard color management (no AgX tonemapping) for visible emission
+scene.view_settings.view_transform = "Standard"
 
 clip_dir = Path(cfg["dataset_root"]) / "clips" / cfg["clip_name"]
 clip_dir.mkdir(parents=True, exist_ok=True)

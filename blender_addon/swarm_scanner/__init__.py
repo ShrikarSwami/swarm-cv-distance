@@ -335,8 +335,13 @@ class SWARM_OT_generate(Operator):
         coll = bpy.data.collections.new(SWARM_COLLECTION)
         context.scene.collection.children.link(coll)
         for i, pos in enumerate(positions):
-            obj = bpy.data.objects.new(f"drone_{i:03d}", mesh)
-            obj.location = tuple(pos)
+            # Must use bpy.ops for Cycles/EEVEE evaluation —
+            # bpy.data.objects.new() creates objects the renderer ignores.
+            # Create via bpy.ops, then swap mesh data to our drone mesh.
+            bpy.ops.mesh.primitive_cube_add(size=1, location=pos)
+            obj = bpy.context.active_object
+            obj.name = f"drone_{i:03d}"
+            obj.data = mesh  # swap to drone mesh
             obj.pass_index = i + 1  # 0 = background; reused by the scan milestone
             coll.objects.link(obj)
 
