@@ -39,9 +39,17 @@ needs to replicate.
 ## Constraints
 
 - Apple Silicon, no CUDA. Any torch/YOLO work in Stage 2 must target device `"mps"`, not assume a
-  CUDA stack.
+  CUDA stack. This applies to the research pipeline (Stage 1/Stage 2, batch rendering, detection),
+  which stays Mac-local — see the Linux bullet below for the one thing that does not.
 - Standalone Mac-local test track. Must run without the existing Linux/CORE+EMANE/ArduPilot swarm
   simulation environment — no dependency on that stack or its logs.
+- The interactive `blender_addon/` — and only that — has a Linux setup path, on the
+  `linux-quickstart` branch (`linux_quickstart/`, see `STARTUP.txt`). `make_package.sh` there builds
+  a zip containing the addon plus the two numpy-only `stage1_geometry` files it imports at load;
+  it deliberately excludes all research-pipeline, batch-queue, Stage 2 render and CV/EXR detection
+  code. Do not widen that package's contents or add Linux support to the research pipeline — the
+  Mac-local constraint above still governs everything else. That branch's `check_env.py` does probe
+  for NVIDIA/CUDA, which is scoped to addon-local Blender rendering, not to the `"mps"` rule.
 - `ultralytics` and `bpy` are Stage 2 dependencies only — do not install them until Stage 1 results
   are validated (see `requirements.txt`).
 
