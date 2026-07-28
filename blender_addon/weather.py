@@ -170,6 +170,9 @@ class WeatherPreset:
             # Only link if not already linked
             if sun_obj.name not in scene.collection.objects:
                 scene.collection.objects.link(sun_obj)
+        else:
+            # Already exists in the scene, no need to link
+            pass
 
         # Update sun parameters
         sun_obj.data.energy = self.sun_energy
@@ -184,8 +187,6 @@ class WeatherPreset:
             0.0,
             math.radians(self.sun_rotation_deg),
         )
-
-        scene.collection.objects.link(sun_obj)
 
     def __repr__(self):
         return (

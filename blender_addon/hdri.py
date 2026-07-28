@@ -5,12 +5,23 @@ and applies them to Blender's world node tree for image-based lighting.
 """
 
 import os
+import ssl
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
 from urllib.request import urlopen, Request
 from urllib.error import URLError
+
+
+def _create_ssl_context():
+    """Create an SSL context using certifi certificates if available."""
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
+    return ctx
 
 
 @dataclass
@@ -40,7 +51,7 @@ PRESETS: Dict[str, HDPreset] = {
     ),
     "dusk": HDPreset(
         name="dusk",
-        asset_id="kiara_1_dusk",
+        asset_id="kiara_9_dusk",
         sun_azimuth=90.0,
         sun_elevation=15.0,
         strength=1.2,
@@ -75,34 +86,43 @@ def download_hdri(asset_id: str) -> Path:
     if target_path.exists() and target_path.stat().st_size > 1_000_000:
         return target_path
 
-    # Fetch asset info from Poly Haven API
-    api_url = f"https://api.polyhaven.com/assets/{asset_id}"
+    # Fetch file info from Poly Haven API
+    api_url = f"https://api.polyhaven.com/files/{asset_id}"
+    _ssl_ctx = _create_ssl_context()
     try:
-        with urlopen(api_url) as response:
+        req = Request(api_url, headers={"User-Agent": "curl/7.88.1"})
+        with urlopen(req, context=_ssl_ctx) as response:
             import json
-            asset_info = json.loads(response.read())
+            file_info = json.loads(response.read())
     except URLError as e:
-        raise RuntimeError(f"Failed to fetch asset info from Poly Haven: {e}")
+        raise RuntimeError(f"Failed to fetch file info from Poly Haven: {e}")
 
     # Get download URL for 2k resolution .exr
-    if "hdri" not in asset_info or "2k" not in asset_info.get("hdri", {}):
-        # Try to find any available resolution
-        hdri_info = asset_info.get("hdri", {})
-        available_resolutions = [k for k in hdri_info.keys() if k.endswith("k")]
-        if not available_resolutions:
-            raise RuntimeError(f"No HDRI resolutions available for {asset_id}")
-        # Use largest available (sort numerically)
-        resolution = sorted(available_resolutions, key=lambda x: int(x[:-1]))[-1]
-    else:
-        resolution = "2k"
+    if "hdri" not in file_info:
+        raise RuntimeError(f"No HDRI data available for {asset_id}")
 
-    # Construct download URL
-    download_url = f"https://dl.polyhaven.org/file/ph-assets/HDRIs/exr/{resolution}/{asset_id}_{resolution}.exr"
+    hdri_info = file_info["hdri"]
+    available_resolutions = [k for k in hdri_info.keys() if k.endswith("k")]
+    if not available_resolutions:
+        raise RuntimeError(f"No HDRI resolutions available for {asset_id}")
+
+    # Use '2k' if available, otherwise largest available
+    if "2k" in hdri_info:
+        resolution = "2k"
+    else:
+        resolution = sorted(available_resolutions, key=lambda x: int(x[:-1]))[-1]
+
+    exr_info = hdri_info[resolution].get("exr")
+    if not exr_info or "url" not in exr_info:
+        raise RuntimeError(f"No EXR download URL for {asset_id} at {resolution}")
+
+    download_url = exr_info["url"]
+    expected_bytes = exr_info.get("size")
 
     # Download to temp file
     try:
-        req = Request(download_url)
-        with urlopen(req) as response:
+        req = Request(download_url, headers={"User-Agent": "curl/7.88.1"})
+        with urlopen(req, context=_ssl_ctx) as response:
             content_length = response.headers.get("Content-Length")
             if content_length is None:
                 raise RuntimeError("Response missing Content-Length header")
@@ -194,7 +214,8 @@ def apply(scene, preset_name: str):
 
     mapping = nodes.new("ShaderNodeMapping")
     mapping.location = (-200, 0)
-    mapping.rotation = (0, 0, preset.sun_azimuth)
+    import math
+    mapping.inputs["Rotation"].default_value = (0, 0, math.radians(preset.sun_azimuth))
     links.new(mapping.outputs["Vector"], env_tex.inputs["Vector"])
 
     tex_coord = nodes.new("ShaderNodeTexCoord")

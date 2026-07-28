@@ -8,11 +8,20 @@ Usage:
   blender --background --python smoke_test_hdri.py
 """
 
+import sys
+import os
 import bpy
 import time
 import numpy as np
 from pathlib import Path
 from PIL import Image
+
+# Ensure blender_addon is importable (same approach as render_clip.py)
+_project_root = str(Path(__file__).resolve().parent)
+_addon_dir = os.path.join(_project_root, "blender_addon")
+for p in [_project_root, _addon_dir]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 # Configuration
 OUTPUT_DIR = Path(__file__).parent / "dataset_smoke_test" / "hdri_test"
@@ -53,16 +62,8 @@ def main():
 
     # Step 3: Apply weather preset with hdri_active=True
     print("\n[3] Applying weather preset")
-    from blender_addon.weather import WeatherPreset
-    weather_preset = WeatherPreset(
-        name="clear",
-        sun_energy=5.0,
-        sun_elevation_deg=60.0,
-        sun_rotation_deg=45.0,
-        sun_color=(1.0, 0.95, 0.9, 1.0),
-        sky_luminance_cd_m2=8000.0,
-        ambient_color=(0.5, 0.6, 0.9, 1.0),
-    )
+    from blender_addon.weather import get_weather
+    weather_preset = get_weather("clear")
     weather_preset.apply(scene, hdri_active=True)
 
     # Step 4: Apply HDRI preset (clear)
@@ -111,40 +112,38 @@ def main():
         # Set object index for EXR pass
         cube.pass_index = i + 1
 
-    # Step 7: Setup compositor for EXR multilayer output
-    print("\n[7] Setting up compositor for EXR output")
-    scene.use_nodes = True
-    tree = scene.node_tree
-    tree.nodes.clear()
-
-    rl = tree.nodes.new("CompositorNodeRLayers")
-    rl.location = (0, 0)
-
-    out = tree.nodes.new("CompositorNodeOutputFile")
-    out.location = (200, 0)
-    out.filepath = str(OUTPUT_DIR / "render_exr") + "/"
-    out.file_slots[0].path = "render_exr"
-    out.format.file_format = "OPEN_EXR_MULTILAYER"
-    out.format.color_depth = "32"
-
-    tree.links.new(rl.outputs["Image"], out.inputs["Image"])
-
-    # Step 8: Render single frame
-    print("\n[8] Rendering single frame")
+    # Step 7: Render single frame as EXR (for data analysis)
+    print("\n[7] Rendering single frame as EXR")
     render_start = time.time()
 
-    scene.render.filepath = str(OUTPUT_DIR / "render")
+    scene.render.filepath = str(OUTPUT_DIR / "render.exr")
+    scene.render.image_settings.file_format = "OPEN_EXR"
+    scene.render.image_settings.color_depth = "32"
     bpy.ops.render.render(write_still=True)
+
+    exr_time = time.time() - render_start
+
+    # Step 8: Render single frame as PNG (for visual inspection)
+    print("\n[8] Rendering single frame as PNG")
+    scene.render.filepath = str(OUTPUT_DIR / "render.png")
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.color_mode = "RGBA"
+
+    png_start = time.time()
+    bpy.ops.render.render(write_still=True)
+    png_time = time.time() - png_start
 
     render_time = time.time() - render_start
     total_time = time.time() - start_time
 
-    print(f"\n  Render time: {render_time:.2f}s")
-    print(f"  Total time: {total_time:.2f}s")
+    print(f"\n  EXR render time: {exr_time:.2f}s")
+    print(f"  PNG render time: {png_time:.2f}s")
+    print(f"  Total render time: {render_time:.2f}s")
+    print(f"  Total script time: {total_time:.2f}s")
 
     # Step 9: Analyze EXR multilayer pass
     print("\n[9] Analyzing EXR multilayer pass")
-    exr_path = OUTPUT_DIR / "render_exr" / "render_exr0001.exr"
+    exr_path = OUTPUT_DIR / "render.exr"
     if exr_path.exists():
         exr_size = exr_path.stat().st_size
         print(f"  EXR file: {exr_path}")
@@ -154,7 +153,7 @@ def main():
         else:
             print("  ✗ EXR file too small (<10KB)")
     else:
-        print("  EXR file not found (compositor may not have written it)")
+        print("  EXR file not found")
 
     # Step 10: Analyze PNG render
     print("\n[10] Analyzing PNG render")
@@ -205,7 +204,7 @@ def main():
     print(f"  Render time: {render_time:.2f}s")
     print(f"  Total time: {total_time:.2f}s")
     print(f"  PNG output: {OUTPUT_DIR / 'render.png'}")
-    print(f"  EXR output: {OUTPUT_DIR / 'render_exr' / 'render_exr0001.exr'}")
+    print(f"  EXR output: {OUTPUT_DIR / 'render.exr'}")
     print("=" * 70)
 
 
