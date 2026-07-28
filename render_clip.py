@@ -132,18 +132,20 @@ for obj in bpy.data.objects:
         print(f"[{cfg['clip_name']}] Sun energy: {old_energy} -> {obj.data.energy}")
         break
 
-# Also modify world background color based on weather
-if scene.world and scene.world.use_nodes:
-    bg = scene.world.node_tree.nodes.get("Background")
-    if bg:
-        # Blend environment sky color with weather ambient color
-        env_color = np.array(env_preset.sky_color[:3])
-        weather_color = np.array(weather_preset.ambient_color[:3])
-        # Weight by sun energy ratio (higher energy = more environment color)
-        energy_ratio = weather_preset.sun_energy / 5.0  # normalize to clear sky
-        blended = env_color * energy_ratio + weather_color * (1 - energy_ratio)
-        bg.inputs["Color"].default_value = (*blended, 1.0)
-        print(f"[{cfg['clip_name']}] World BG: {list(bg.inputs['Color'].default_value)}")
+# Note: World background color blending is now handled by HDRI module
+# The HDRI apply() clears the world node tree and replaces with image-based lighting
+# This code is kept for reference but is no longer executed when HDRI is active
+# if scene.world and scene.world.use_nodes:
+#     bg = scene.world.node_tree.nodes.get("Background")
+#     if bg:
+#         # Blend environment sky color with weather ambient color
+#         env_color = np.array(env_preset.sky_color[:3])
+#         weather_color = np.array(weather_preset.ambient_color[:3])
+#         # Weight by sun energy ratio (higher energy = more environment color)
+#         energy_ratio = weather_preset.sun_energy / 5.0  # normalize to clear sky
+#         blended = env_color * energy_ratio + weather_color * (1 - energy_ratio)
+#         bg.inputs["Color"].default_value = (*blended, 1.0)
+#         print(f"[{cfg['clip_name']}] World BG: {list(bg.inputs['Color'].default_value)}")
 
 # Apply HDRI environment lighting (after weather preset)
 from blender_addon.hdri import apply as apply_hdri

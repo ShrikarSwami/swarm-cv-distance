@@ -4,7 +4,6 @@ Downloads HDRI skies from Poly Haven on first use, caches in assets/hdris/,
 and applies them to Blender's world node tree for image-based lighting.
 """
 
-import os
 import ssl
 import tempfile
 from dataclasses import dataclass
