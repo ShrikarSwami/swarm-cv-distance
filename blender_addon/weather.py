@@ -97,19 +97,21 @@ class WeatherPreset:
     # Public API
     # ------------------------------------------------------------------
 
-    def apply(self, scene):
+    def apply(self, scene, hdri_active: bool = False):
         """Apply this weather preset to *scene*'s world and sun light.
 
         This method:
         1. Configures the world node tree with either a Nishita sky
-           texture or a plain background color.
+           texture or a plain background color (skipped if hdri_active=True).
         2. Creates or updates a SUN light object to match the preset's
            elevation, rotation, and energy.
 
-        The method is idempotent: calling it multiple times replaces the
-        previous world nodes and sun light without duplicating them.
+        Args:
+            scene: Blender scene to apply preset to
+            hdri_active: If True, skip world background setup (HDRI handles it)
         """
-        self._setup_world(scene)
+        if not hdri_active:
+            self._setup_world(scene)
         self._setup_sun_light(scene)
 
     # ------------------------------------------------------------------
