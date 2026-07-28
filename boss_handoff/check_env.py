@@ -189,7 +189,7 @@ except Exception as e:
 """
 
 
-def check_cycles(exe):
+def check_cycles(exe, nvidia_present, nvidia_ok):
     head("4. Can Cycles use the GPU?")
     if not exe:
         warn("Skipped -- Blender isn't installed yet. Install it, then re-run.")
@@ -205,25 +205,29 @@ def check_cycles(exe):
             gpus.append((be, names))
         elif ln.startswith("SWARM_FATAL:"):
             bad("Could not query Cycles: " + ln.split(":", 1)[1])
-    gpu_backends = [b for b in backends if b not in ("NONE", "CPU")]
     if not backends:
         warn("Blender ran but returned no Cycles device info "
              "(unexpected -- try re-running).")
         return None
+    # NOTE: get_device_types() always lists CUDA/OPTIX/HIP/ONEAPI (the backends
+    # this Blender build was compiled with) regardless of hardware. Only the
+    # presence of an actual enumerated GPU *device* means the GPU is usable.
     if gpus:
         for be, names in gpus:
-            ok(f"Cycles GPU backend available: {be} -> {names}")
+            ok(f"Cycles can use the GPU: {be} -> {names}")
         info("GPU rendering WILL be used. This is the fast path.")
         return True
+    # No usable GPU device. Distinguish "broken driver" from "no discrete GPU".
+    if nvidia_present and not nvidia_ok:
+        bad("An NVIDIA card is present but Cycles found NO usable GPU device -- "
+            "the driver is missing or broken. Fix the NVIDIA driver (README step "
+            "'If the checker says the GPU isn't usable') to render on the GPU.")
     else:
-        if gpu_backends:
-            bad(f"Cycles lists GPU backend(s) {gpu_backends} but found NO usable "
-                "GPU device -- almost always a missing/broken driver.")
-        else:
-            info("No GPU compute backend (CUDA/OptiX/HIP) available to Cycles.")
-        info("Cycles will render on the CPU: slower, but it works fine for "
-             "messing around.")
-        return False
+        info("No compatible GPU for Cycles on this machine -- normal for "
+             "integrated graphics or a box with no discrete NVIDIA/AMD card.")
+    info("Cycles will render on the CPU: slower, but it works fine for "
+         "messing around.")
+    return False
 
 
 # ---- 5. disk space ---------------------------------------------------------
@@ -268,8 +272,8 @@ def main():
     print("(read-only: this does not install or change anything)\n")
     system = check_os()
     exe, ver = check_blender()
-    check_gpu_hardware(system)
-    cycles_gpu = check_cycles(exe)
+    nvidia_present, nvidia_ok = check_gpu_hardware(system)
+    cycles_gpu = check_cycles(exe, nvidia_present, nvidia_ok)
     check_disk()
     verdict(ver, cycles_gpu)
     print()
