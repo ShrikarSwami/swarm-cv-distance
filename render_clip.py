@@ -145,6 +145,16 @@ if scene.world and scene.world.use_nodes:
         bg.inputs["Color"].default_value = (*blended, 1.0)
         print(f"[{cfg['clip_name']}] World BG: {list(bg.inputs['Color'].default_value)}")
 
+# Apply HDRI environment lighting (after weather preset)
+from blender_addon.hdri import apply as apply_hdri
+hdri_name = cfg.get("hdri", "clear")
+try:
+    apply_hdri(scene, hdri_name)
+    print(f"[{cfg['clip_name']}] HDRI: {hdri_name}")
+except Exception as e:
+    print(f"[{cfg['clip_name']}] HDRI failed: {e}")
+    raise
+
 # Debug output
 print(f"[{cfg['clip_name']}] Objects: {[obj.name for obj in bpy.data.objects]}")
 print(f"[{cfg['clip_name']}] Sun found: {sun_found}")
