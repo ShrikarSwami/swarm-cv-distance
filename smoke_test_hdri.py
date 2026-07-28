@@ -75,6 +75,14 @@ def main():
     from blender_addon.hdri import apply as apply_hdri
     apply_hdri(scene, "clear")
 
+    # Debug: Check sun lamp rotation
+    import math as math_module
+    for obj in bpy.data.objects:
+        if obj.type == "LIGHT" and obj.data.type == "SUN":
+            print(f"  Sun lamp: {obj.name}")
+            print(f"    rotation_euler: {[math_module.degrees(r) for r in obj.rotation_euler]}")
+            print(f"    Expected: X={90-60}=30°, Y=0°, Z=45°")
+
     # Step 5: Create camera
     print("\n[5] Setting up camera")
     bpy.ops.object.camera_add(location=(0, -100, 50))
