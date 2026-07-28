@@ -122,7 +122,8 @@ def main():
 
     out = tree.nodes.new("CompositorNodeOutputFile")
     out.location = (200, 0)
-    out.filepath = str(OUTPUT_DIR / "render_exr")
+    out.filepath = str(OUTPUT_DIR / "render_exr") + "/"
+    out.file_slots[0].path = "render_exr"
     out.format.file_format = "OPEN_EXR_MULTILAYER"
     out.format.color_depth = "32"
 
@@ -143,7 +144,7 @@ def main():
 
     # Step 9: Analyze EXR multilayer pass
     print("\n[9] Analyzing EXR multilayer pass")
-    exr_path = OUTPUT_DIR / "render_exr0000.exr"
+    exr_path = OUTPUT_DIR / "render_exr" / "render_exr0001.exr"
     if exr_path.exists():
         exr_size = exr_path.stat().st_size
         print(f"  EXR file: {exr_path}")
@@ -204,7 +205,7 @@ def main():
     print(f"  Render time: {render_time:.2f}s")
     print(f"  Total time: {total_time:.2f}s")
     print(f"  PNG output: {OUTPUT_DIR / 'render.png'}")
-    print(f"  EXR output: {OUTPUT_DIR / 'render_exr0000.exr'}")
+    print(f"  EXR output: {OUTPUT_DIR / 'render_exr' / 'render_exr0001.exr'}")
     print("=" * 70)
 
 
