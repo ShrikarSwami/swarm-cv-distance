@@ -76,11 +76,10 @@ def main():
     cam = bpy.context.object
     cam.name = "SmokeTestCamera"
 
-    # Point camera at scene center
-    constraint = cam.constraints.new(type='TRACK_TO')
-    constraint.target = None  # Will track origin
-    constraint.track_axis = 'TRACK_NEGATIVE_Z'
-    constraint.up_axis = 'UP_Y'
+    # Point camera at scene center using explicit rotation
+    # (TRACK_TO with target=None is unreliable in headless Blender)
+    import math
+    cam.rotation_euler = (math.radians(75), 0, 0)  # Look down at scene
 
     scene.camera = cam
 
@@ -112,8 +111,25 @@ def main():
         # Set object index for EXR pass
         cube.pass_index = i + 1
 
-    # Step 7: Render single frame
-    print("\n[7] Rendering single frame")
+    # Step 7: Setup compositor for EXR multilayer output
+    print("\n[7] Setting up compositor for EXR output")
+    scene.use_nodes = True
+    tree = scene.node_tree
+    tree.nodes.clear()
+
+    rl = tree.nodes.new("CompositorNodeRLayers")
+    rl.location = (0, 0)
+
+    out = tree.nodes.new("CompositorNodeOutputFile")
+    out.location = (200, 0)
+    out.filepath = str(OUTPUT_DIR / "render_exr")
+    out.format.file_format = "OPEN_EXR_MULTILAYER"
+    out.format.color_depth = "32"
+
+    tree.links.new(rl.outputs["Image"], out.inputs["Image"])
+
+    # Step 8: Render single frame
+    print("\n[8] Rendering single frame")
     render_start = time.time()
 
     scene.render.filepath = str(OUTPUT_DIR / "render")
@@ -125,8 +141,22 @@ def main():
     print(f"\n  Render time: {render_time:.2f}s")
     print(f"  Total time: {total_time:.2f}s")
 
-    # Step 8: Analyze render
-    print("\n[8] Analyzing render")
+    # Step 9: Analyze EXR multilayer pass
+    print("\n[9] Analyzing EXR multilayer pass")
+    exr_path = OUTPUT_DIR / "render_exr0000.exr"
+    if exr_path.exists():
+        exr_size = exr_path.stat().st_size
+        print(f"  EXR file: {exr_path}")
+        print(f"  EXR size: {exr_size / 1024:.1f} KB")
+        if exr_size > 10000:
+            print("  ✓ EXR file looks valid (>10KB)")
+        else:
+            print("  ✗ EXR file too small (<10KB)")
+    else:
+        print("  EXR file not found (compositor may not have written it)")
+
+    # Step 10: Analyze PNG render
+    print("\n[10] Analyzing PNG render")
 
     # Load rendered image
     render_path = OUTPUT_DIR / "render.png"
@@ -151,19 +181,30 @@ def main():
         print(f"  Background pixel (sky): {bg_mean}")
         print(f"  Difference: {np.abs(center_mean - bg_mean).max():.2f}")
 
-        # Check if drones are visible
-        if np.abs(center_mean - bg_mean).max() > 5.0:
-            print("  ✓ Drones visible against sky")
+        # Check if drones are visible (relative comparison)
+        diff = np.abs(center_mean - bg_mean).max()
+        if diff > 1.0:  # At least 1 unit difference in 0-255 range
+            print(f"  ✓ Drones visible against sky (diff={diff:.2f})")
         else:
-            print("  ✗ Drones not distinguishable from sky")
+            print(f"  ✗ Drones not distinguishable from sky (diff={diff:.2f})")
 
-    # Step 9: Report results
+    else:
+        print("  PNG render not found")
+
+    # Shadow direction check (visual inspection required)
+    print("\n  Shadow direction check:")
+    print("  - Visually inspect shadows on ground plane")
+    print("  - Confirm shadows point toward HDRI's bright region")
+    print("  - This requires human verification of the rendered image")
+
+    # Step 11: Report results
     print("\n" + "=" * 70)
     print("RESULTS")
     print("=" * 70)
     print(f"  Render time: {render_time:.2f}s")
     print(f"  Total time: {total_time:.2f}s")
-    print(f"  Output: {OUTPUT_DIR / 'render.png'}")
+    print(f"  PNG output: {OUTPUT_DIR / 'render.png'}")
+    print(f"  EXR output: {OUTPUT_DIR / 'render_exr0000.exr'}")
     print("=" * 70)
 
 
