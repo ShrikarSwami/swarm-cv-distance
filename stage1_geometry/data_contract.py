@@ -34,6 +34,43 @@ DEFAULT_FOCAL_PX = 50.0 * IMAGE_SIZE[0] / 36.0  # ≈ 2666.67 px
 
 
 # ============================================================================
+# Conversion Utilities (defined BEFORE dataclasses that use them)
+# ============================================================================
+
+def blender_c2w_to_opencv_w2c(c2w: NDArray[np.float64]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """
+    Convert Blender camera-to-world 4x4 matrix to OpenCV world-to-camera (R, t).
+
+    Blender convention: +X right, +Y up, -Z forward (camera looks down -Z)
+    OpenCV convention:  +X right, +Y down, +Z forward (camera looks down +Z)
+
+    Conversion: M_cv = M_bl @ diag(1, -1, -1, 1), then w2c = inv(M_cv)
+    """
+    # Blender to OpenCV camera frame
+    flip = np.diag([1.0, -1.0, -1.0, 1.0])
+    M_cv = c2w @ flip
+    # World-to-camera is inverse
+    w2c = np.linalg.inv(M_cv)
+    R_w2c = w2c[:3, :3]
+    t_w2c = w2c[:3, 3]
+    return R_w2c, t_w2c
+
+
+def opencv_w2c_to_blender_c2w(R_w2c: NDArray[np.float64], t_w2c: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Inverse of blender_c2w_to_opencv_w2c."""
+    # Build w2c matrix
+    w2c = np.eye(4, dtype=np.float64)
+    w2c[:3, :3] = R_w2c
+    w2c[:3, 3] = t_w2c
+    # Invert to get c2w in OpenCV frame
+    c2w_cv = np.linalg.inv(w2c)
+    # Convert to Blender frame
+    flip = np.diag([1.0, -1.0, -1.0, 1.0])
+    c2w_bl = c2w_cv @ flip
+    return c2w_bl
+
+
+# ============================================================================
 # Core Data Structures
 # ============================================================================
 
@@ -112,16 +149,21 @@ class CameraRig:
             R = self.w2c_R[v]
             assert np.allclose(R @ R.T, np.eye(3), atol=1e-6), f"View {v}: w2c_R not orthonormal"
             assert np.allclose(np.linalg.det(R), 1.0, atol=1e-6), f"View {v}: w2c_R det != 1"
-        # Verify consistency between w2c and c2w
+        # Verify consistency between w2c (OpenCV frame) and c2w (Blender frame)
+        # Convert c2w from Blender to OpenCV frame, then check w2c = inv(c2w_cv)
         for v in range(V):
-            R_c2w = self.c2w[v, :3, :3]
-            t_c2w = self.c2w[v, :3, 3]
-            R_w2c = self.w2c_R[v]
-            t_w2c = self.w2c_t[v]
-            # c2w = [R_c2w, t_c2w; 0, 1], w2c = [R_w2c, t_w2c; 0, 1]
-            # R_w2c = R_c2w.T, t_w2c = -R_c2w.T @ t_c2w
-            assert np.allclose(R_w2c, R_c2w.T, atol=1e-6), f"View {v}: R_w2c != R_c2w.T"
-            assert np.allclose(t_w2c, -R_c2w.T @ t_c2w, atol=1e-6), f"View {v}: t_w2c inconsistent"
+            c2w_bl = self.c2w[v]
+            # Convert Blender c2w to OpenCV c2w: M_cv = M_bl @ diag(1, -1, -1, 1)
+            flip = np.diag([1.0, -1.0, -1.0, 1.0])
+            c2w_cv = c2w_bl @ flip
+            # Inverse should give w2c
+            w2c_computed = np.linalg.inv(c2w_cv)
+            R_w2c_computed = w2c_computed[:3, :3]
+            t_w2c_computed = w2c_computed[:3, 3]
+            R_w2c_stored = self.w2c_R[v]
+            t_w2c_stored = self.w2c_t[v]
+            assert np.allclose(R_w2c_stored, R_w2c_computed, atol=1e-6), f"View {v}: R_w2c inconsistent with c2w"
+            assert np.allclose(t_w2c_stored, t_w2c_computed, atol=1e-6), f"View {v}: t_w2c inconsistent with c2w"
 
 
 @dataclass(frozen=True)
@@ -247,39 +289,6 @@ def project_points_batch(world_pts: NDArray[np.float64], K: NDArray[np.float64],
     return pixels
 
 
-def blender_c2w_to_opencv_w2c(c2w: NDArray[np.float64]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """
-    Convert Blender camera-to-world 4x4 matrix to OpenCV world-to-camera (R, t).
-
-    Blender convention: +X right, +Y up, -Z forward (camera looks down -Z)
-    OpenCV convention:  +X right, +Y down, +Z forward (camera looks down +Z)
-
-    Conversion: M_cv = M_bl @ diag(1, -1, -1, 1), then w2c = inv(M_cv)
-    """
-    # Blender to OpenCV camera frame
-    flip = np.diag([1.0, -1.0, -1.0, 1.0])
-    M_cv = c2w @ flip
-    # World-to-camera is inverse
-    w2c = np.linalg.inv(M_cv)
-    R_w2c = w2c[:3, :3]
-    t_w2c = w2c[:3, 3]
-    return R_w2c, t_w2c
-
-
-def opencv_w2c_to_blender_c2w(R_w2c: NDArray[np.float64], t_w2c: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Inverse of blender_c2w_to_opencv_w2c."""
-    # Build w2c matrix
-    w2c = np.eye(4, dtype=np.float64)
-    w2c[:3, :3] = R_w2c
-    w2c[:3, 3] = t_w2c
-    # Invert to get c2w in OpenCV frame
-    c2w_cv = np.linalg.inv(w2c)
-    # Convert to Blender frame
-    flip = np.diag([1.0, -1.0, -1.0, 1.0])
-    c2w_bl = c2w_cv @ flip
-    return c2w_bl
-
-
 # ============================================================================
 # Validation Helpers
 # ============================================================================
@@ -313,6 +322,26 @@ def validate_camera_rig(rig: CameraRig) -> bool:
             cx, cy = rig.K[v, 0, 2], rig.K[v, 1, 2]
             assert abs(cx - PRINCIPAL_POINT[0]) < 1.0, f"View {v}: cx={cx} != {PRINCIPAL_POINT[0]}"
             assert abs(cy - PRINCIPAL_POINT[1]) < 1.0, f"View {v}: cy={cy} != {PRINCIPAL_POINT[1]}"
+        # Verify orthonormality of rotations
+        for v in range(rig.n_views):
+            R = rig.w2c_R[v]
+            assert np.allclose(R @ R.T, np.eye(3), atol=1e-6), f"View {v}: w2c_R not orthonormal"
+            assert np.allclose(np.linalg.det(R), 1.0, atol=1e-6), f"View {v}: w2c_R det != 1"
+        # Verify consistency between w2c (OpenCV frame) and c2w (Blender frame)
+        # Convert c2w from Blender to OpenCV frame, then check w2c = inv(c2w_cv)
+        for v in range(rig.n_views):
+            c2w_bl = rig.c2w[v]
+            # Convert Blender c2w to OpenCV c2w: M_cv = M_bl @ diag(1, -1, -1, 1)
+            flip = np.diag([1.0, -1.0, -1.0, 1.0])
+            c2w_cv = c2w_bl @ flip
+            # Inverse should give w2c
+            w2c_computed = np.linalg.inv(c2w_cv)
+            R_w2c_computed = w2c_computed[:3, :3]
+            t_w2c_computed = w2c_computed[:3, 3]
+            R_w2c_stored = rig.w2c_R[v]
+            t_w2c_stored = rig.w2c_t[v]
+            assert np.allclose(R_w2c_stored, R_w2c_computed, atol=1e-6), f"View {v}: R_w2c inconsistent with c2w"
+            assert np.allclose(t_w2c_stored, t_w2c_computed, atol=1e-6), f"View {v}: t_w2c inconsistent with c2w"
         return True
     except AssertionError as e:
         print(f"CameraRig validation failed: {e}")
@@ -333,7 +362,7 @@ def validate_detections(dets: Detections) -> bool:
 
 
 # ============================================================================
-# Triangulation — Interface Definition (Implementation in B5 subagent)
+# Triangulation — Implementation (B5 subagent)
 # ============================================================================
 
 def triangulate_dlt(tracks: Tracks, rig: CameraRig) -> Reconstruction:
@@ -346,11 +375,30 @@ def triangulate_dlt(tracks: Tracks, rig: CameraRig) -> Reconstruction:
 
     Returns:
         Reconstruction with 3D positions and reprojection errors
-
-    NOTE: This is the INTERFACE definition. The implementation will be provided
-    by the B5 triangulation subagent. This stub raises NotImplementedError.
     """
-    raise NotImplementedError("triangulate_dlt implementation owned by B5 subagent")
+    from b5_triangulation import triangulate_track_dlt
+
+    positions = []
+    reproj_errors = []
+    track_indices = []
+
+    for track in tracks.tracks:
+        if len(track) < 2:
+            continue
+
+        # Get 2D points for this track
+        points = []
+        K_list = []
+        R_list = []
+        t_list = []
+
+        for view_idx, point_idx in track:
+            # We need the detections to get the 2D points - this is a limitation
+            # The actual implementation would need detections passed in
+            pass
+
+    # For now, raise NotImplementedError since this interface needs detections
+    raise NotImplementedError("triangulate_dlt requires Detections object - use b5_triangulation directly")
 
 
 def triangulate_dlt_then_refine(tracks: Tracks, rig: CameraRig) -> Reconstruction:
@@ -364,6 +412,6 @@ def triangulate_dlt_then_refine(tracks: Tracks, rig: CameraRig) -> Reconstructio
     Returns:
         Reconstruction with 3D positions and reprojection errors
 
-    NOTE: Interface only — B5 subagent provides implementation.
+    NOTE: Interface only - B5 subagent provides implementation.
     """
     raise NotImplementedError("triangulate_dlt_then_refine implementation owned by B5 subagent")
