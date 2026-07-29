@@ -81,7 +81,7 @@ def render_with_strength(hdri_strength, preset_name="clear"):
 
     mapping = nodes.new("ShaderNodeMapping")
     mapping.location = (-200, 0)
-    mapping.inputs["Rotation"].default_value = (0, 0, preset.sun_azimuth)
+    mapping.inputs["Rotation"].default_value = (0, 0, math.radians(preset.sun_azimuth))
     links.new(mapping.outputs["Vector"], env_tex.inputs["Vector"])
 
     tex_coord = nodes.new("ShaderNodeTexCoord")
@@ -178,37 +178,76 @@ for strength in [1.0, 0.5, 0.3, 0.2, 0.15, 0.1]:
     print(f"  Shadow: {shadow}")
     print(f"  Time: {time:.2f}s")
 
-# Find optimal strength
+def find_optimal(results):
+    """Find strength with best contrast (diff) while avoiding clipping."""
+    best_strength = None
+    best_diff = 0
+    for strength, center, bg, diff, shadow, time in results:
+        center_clipped = center.max() > 250 or center.min() < 5
+        bg_clipped = bg.max() > 250 or bg.min() < 5
+        if not center_clipped and not bg_clipped and diff > best_diff:
+            best_diff = diff
+            best_strength = strength
+    return best_strength, best_diff
+
+# Find optimal for clear
+bs, bd = find_optimal(results)
+print(f"\nOptimal clear strength: {bs} (diff={bd:.4f})")
+if bs:
+    center, bg, diff, shadow, time = render_with_strength(bs, "clear")
+    print(f"  Final: Center={center}, BG={bg}, Diff={diff:.4f}, Shadow={shadow}, Time={time:.2f}s")
+
+# ---------------------------------------------------------------------------
+# OVERCAST PRESET SWEEP
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 70)
-print("OPTIMAL STRENGTH ANALYSIS")
+print("HDRI STRENGTH SWEEP - OVERCAST PRESET")
 print("=" * 70)
 
-# Find strength with best contrast (diff) while avoiding clipping
-best_strength = None
-best_diff = 0
-for strength, center, bg, diff, shadow, time in results:
-    # Check for clipping (values near 0 or 255)
-    center_clipped = center.max() > 250 or center.min() < 5
-    bg_clipped = bg.max() > 250 or bg.min() < 5
-
-    if not center_clipped and not bg_clipped and diff > best_diff:
-        best_diff = diff
-        best_strength = strength
-
-print(f"Optimal strength: {best_strength}")
-print(f"Best diff: {best_diff:.4f}")
-
-# Render final with optimal strength
-if best_strength:
-    print(f"\nRendering final with strength {best_strength}...")
-    center, bg, diff, shadow, time = render_with_strength(best_strength, "clear")
-    print(f"Final render:")
+oc_results = []
+for strength in [0.8, 0.5, 0.3, 0.2, 0.15, 0.1]:
+    center, bg, diff, shadow, time = render_with_strength(strength, "overcast")
+    oc_results.append((strength, center, bg, diff, shadow, time))
+    print(f"\nStrength {strength}:")
     print(f"  Center: {center}")
     print(f"  Background: {bg}")
     print(f"  Diff: {diff:.4f}")
     print(f"  Shadow: {shadow}")
     print(f"  Time: {time:.2f}s")
 
+bs_oc, bd_oc = find_optimal(oc_results)
+print(f"\nOptimal overcast strength: {bs_oc} (diff={bd_oc:.4f})")
+if bs_oc:
+    center, bg, diff, shadow, time = render_with_strength(bs_oc, "overcast")
+    print(f"  Final: Center={center}, BG={bg}, Diff={diff:.4f}, Shadow={shadow}, Time={time:.2f}s")
+
+# ---------------------------------------------------------------------------
+# DUSK PRESET SWEEP
+# ---------------------------------------------------------------------------
+print("\n" + "=" * 70)
+print("HDRI STRENGTH SWEEP - DUSK PRESET")
+print("=" * 70)
+
+dk_results = []
+for strength in [1.2, 0.8, 0.5, 0.3, 0.2]:
+    center, bg, diff, shadow, time = render_with_strength(strength, "dusk")
+    dk_results.append((strength, center, bg, diff, shadow, time))
+    print(f"\nStrength {strength}:")
+    print(f"  Center: {center}")
+    print(f"  Background: {bg}")
+    print(f"  Diff: {diff:.4f}")
+    print(f"  Shadow: {shadow}")
+    print(f"  Time: {time:.2f}s")
+
+bs_dk, bd_dk = find_optimal(dk_results)
+print(f"\nOptimal dusk strength: {bs_dk} (diff={bd_dk:.4f})")
+if bs_dk:
+    center, bg, diff, shadow, time = render_with_strength(bs_dk, "dusk")
+    print(f"  Final: Center={center}, BG={bg}, Diff={diff:.4f}, Shadow={shadow}, Time={time:.2f}s")
+
 print("\n" + "=" * 70)
 print("SUMMARY")
 print("=" * 70)
+print(f"  Clear:    optimal strength={bs},   diff={bd:.4f}")
+print(f"  Overcast: optimal strength={bs_oc}, diff={bd_oc:.4f}")
+print(f"  Dusk:     optimal strength={bs_dk}, diff={bd_dk:.4f}")
