@@ -27,7 +27,10 @@ from numpy.typing import NDArray
 CONVENTION_TAG: Literal["opencv_enu"] = "opencv_enu"
 IMAGE_SIZE = (1920, 1080)  # (width, height)
 PRINCIPAL_POINT = (IMAGE_SIZE[0] / 2.0, IMAGE_SIZE[1] / 2.0)  # (960.0, 540.0)
-FOCAL_PX = 1400.0  # Stage 1 focal length in pixels — UNIFIED VALUE
+
+# Focal length is now a property of the camera rig, NOT a module constant.
+# Default to render pipeline's actual value: 50mm on 36mm sensor at 1920px = 2666.67px
+DEFAULT_FOCAL_PX = 50.0 * IMAGE_SIZE[0] / 36.0  # ≈ 2666.67 px
 
 
 # ============================================================================
@@ -80,6 +83,7 @@ class CameraRig:
         w2c_R: (n_views, 3, 3) float64 — world-to-camera rotations
         w2c_t: (n_views, 3) float64 — world-to-camera translations
         c2w: (n_views, 4, 4) float64 — camera-to-world (Blender matrix_world)
+        focal_px: float — focal length in pixels (same for all views)
         convention: str — must equal CONVENTION_TAG
         geometry_class: Literal["all_ground", "mixed", "surround"] — camera placement style
     """
@@ -87,6 +91,7 @@ class CameraRig:
     w2c_R: NDArray[np.float64]       # (V, 3, 3)
     w2c_t: NDArray[np.float64]       # (V, 3)
     c2w: NDArray[np.float64]         # (V, 4, 4)
+    focal_px: float                  # focal length in pixels
     convention: str
     geometry_class: Literal["all_ground", "mixed", "surround"]
 
@@ -101,6 +106,7 @@ class CameraRig:
         assert self.w2c_R.shape == (V, 3, 3), f"w2c_R must be (V,3,3), got {self.w2c_R.shape}"
         assert self.w2c_t.shape == (V, 3), f"w2c_t must be (V,3), got {self.w2c_t.shape}"
         assert self.c2w.shape == (V, 4, 4), f"c2w must be (V,4,4), got {self.c2w.shape}"
+        assert self.focal_px > 0, "focal_px must be positive"
         # Verify orthonormality of rotations
         for v in range(V):
             R = self.w2c_R[v]
@@ -193,7 +199,7 @@ class Reconstruction:
 # Projection Utilities (using the contract's conventions)
 # ============================================================================
 
-def make_K(focal_px: float = FOCAL_PX, image_size: tuple[int, int] = IMAGE_SIZE) -> NDArray[np.float64]:
+def make_K(focal_px: float, image_size: tuple[int, int] = IMAGE_SIZE) -> NDArray[np.float64]:
     """Create intrinsic matrix per convention."""
     cx, cy = image_size[0] / 2.0, image_size[1] / 2.0
     return np.array([
@@ -301,6 +307,7 @@ def validate_camera_rig(rig: CameraRig) -> bool:
     try:
         assert rig.convention == CONVENTION_TAG
         assert rig.K.shape[0] == rig.n_views
+        assert rig.focal_px > 0
         # Check principal point consistency
         for v in range(rig.n_views):
             cx, cy = rig.K[v, 0, 2], rig.K[v, 1, 2]
@@ -326,76 +333,37 @@ def validate_detections(dets: Detections) -> bool:
 
 
 # ============================================================================
-# Round-trip Test (run at module import in test mode)
+# Triangulation — Interface Definition (Implementation in B5 subagent)
 # ============================================================================
 
-if __name__ == "__main__":
-    import sys
+def triangulate_dlt(tracks: Tracks, rig: CameraRig) -> Reconstruction:
+    """
+    DLT triangulation of multi-view tracks.
 
-    print("=== Data Contract Self-Test ===")
+    Args:
+        tracks: Correspondence tracks from B3 (no identity information)
+        rig: CameraRig with K matrices and world-to-camera poses
 
-    # Test 1: K matrix principal point
-    K = make_K()
-    assert np.allclose(K[0, 2], PRINCIPAL_POINT[0])
-    assert np.allclose(K[1, 2], PRINCIPAL_POINT[1])
-    print("✓ K matrix principal point correct")
+    Returns:
+        Reconstruction with 3D positions and reprojection errors
 
-    # Test 2: Blender ↔ OpenCV conversion round-trip
-    # Create a known camera pose
-    R_bl = np.array([[1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=np.float64)  # looking down -Z
-    t_bl = np.array([100.0, 200.0, 300.0], dtype=np.float64)
-    c2w_bl = np.eye(4)
-    c2w_bl[:3, :3] = R_bl
-    c2w_bl[:3, 3] = t_bl
+    NOTE: This is the INTERFACE definition. The implementation will be provided
+    by the B5 triangulation subagent. This stub raises NotImplementedError.
+    """
+    raise NotImplementedError("triangulate_dlt implementation owned by B5 subagent")
 
-    R_w2c, t_w2c = blender_c2w_to_opencv_w2c(c2w_bl)
-    c2w_bl_reconstructed = opencv_w2c_to_blender_c2w(R_w2c, t_w2c)
-    assert np.allclose(c2w_bl, c2w_bl_reconstructed, atol=1e-10)
-    print("✓ Blender↔OpenCV conversion round-trip exact")
 
-    # Test 3: Projection round-trip at known depth
-    world_pt = np.array([10.0, 20.0, 50.0])
-    K_test = make_K(focal_px=1000.0, image_size=(1920, 1080))
-    R_test = np.eye(3)
-    t_test = np.zeros(3)
-    pix = project_point(world_pt, K_test, R_test, t_test)
-    assert pix is not None
-    # Back-project at same depth
-    cam_pt = np.array([pix[0], pix[1], 1.0]) * world_pt[2] / (K_test[0, 0] * R_test[0, 0] + K_test[1, 1] * R_test[1, 1])  # simplified
-    # Better: unproject using known depth
-    depth = world_pt[2]
-    cam_pt = np.linalg.inv(K_test) @ np.array([pix[0] * depth, pix[1] * depth, depth])
-    world_reconstructed = R_test.T @ (cam_pt - t_test)
-    assert np.allclose(world_pt, world_reconstructed, atol=1e-6)
-    print("✓ Projection→unprojection round-trip exact at known depth")
+def triangulate_dlt_then_refine(tracks: Tracks, rig: CameraRig) -> Reconstruction:
+    """
+    DLT + nonlinear refinement (Levenberg-Marquardt on reprojection error).
 
-    # Test 4: SwarmTruth creation and validation
-    truth = SwarmTruth(
-        positions=np.random.rand(1, 5, 3).astype(np.float64) * 1000,
-        drone_ids=np.arange(5, dtype=np.int32)
-    )
-    assert validate_swarm_truth(truth)
-    print("✓ SwarmTruth creation and validation works")
+    Args:
+        tracks: Correspondence tracks from B3
+        rig: CameraRig with K matrices and world-to-camera poses
 
-    # Test 5: CameraRig creation and validation
-    V = 4
-    rig = CameraRig(
-        K=np.stack([make_K() for _ in range(V)]),
-        w2c_R=np.stack([np.eye(3) for _ in range(V)]),
-        w2c_t=np.zeros((V, 3)),
-        c2w=np.stack([np.eye(4) for _ in range(V)]),
-        convention=CONVENTION_TAG,
-        geometry_class="mixed"
-    )
-    assert validate_camera_rig(rig)
-    print("✓ CameraRig creation and validation works")
+    Returns:
+        Reconstruction with 3D positions and reprojection errors
 
-    # Test 6: Detections creation
-    dets = Detections(
-        points_per_view=[np.random.rand(10, 2).astype(np.float64) * 1000 for _ in range(V)]
-    )
-    assert validate_detections(dets)
-    print("✓ Detections creation and validation works")
-
-    print("\n=== ALL SELF-TESTS PASSED ===")
-    sys.exit(0)
+    NOTE: Interface only — B5 subagent provides implementation.
+    """
+    raise NotImplementedError("triangulate_dlt_then_refine implementation owned by B5 subagent")

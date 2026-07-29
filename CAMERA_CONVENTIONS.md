@@ -39,18 +39,16 @@ K = [[focal_px, 0,        cx],
 
 | Parameter | Value | Source |
 |-----------|-------|--------|
-| `focal_px` | **1400.0** pixels | `scene_config.py:FOCAL_PX` |
+| `focal_px` | **CameraRig.focal_px** (default: 2666.67 px = 50mm on 36mm sensor at 1920px) | `data_contract.py:DEFAULT_FOCAL_PX` |
 | `cx` | `width / 2` = **960.0** | Principal point at image center |
 | `cy` | `height / 2` = **540.0** | Principal point at image center |
 | Image size | **1920 × 1080** | `scene_config.py:IMAGE_SIZE` |
 | Sensor width | **36.0 mm** (full-frame) | `render_clip.py` config, `rerender_sky.py` |
 | Focal length (mm) | **50 mm** (configurable) | `render_clip.py` default, M1 sweep config |
 
-**Note:** Stage 1 works in **focal length in pixels** (1400 px). Stage 2 Blender works in **focal length in mm** (50 mm) with `sensor_width=36mm`. The conversion is:
-```
-focal_px = focal_mm * (width_px / sensor_width_mm) = 50 * (1920 / 36) ≈ 2667 px
-```
-**Discrepancy:** Stage 1 uses 1400 px, Stage 2 uses 50mm/36mm → 2667 px. This is a **known mismatch** that must be resolved before Phase 2 drop-in.
+**Key change (2026-07-29):** Focal length is now a **property of `CameraRig`**, not a module constant. Default value matches the render pipeline's actual configuration (50mm on 36mm sensor → 2666.67 px). This makes Phase 2 drop-in trivial — no nonstandard 26.25mm lens invented to accommodate a test file constant.
+
+The old Stage 1 value of 1400 px was a historical artifact. If a different focal length is needed for a specific experiment, it is set on the `CameraRig` instance and reported alongside every result in the grid.
 
 ---
 
@@ -124,9 +122,9 @@ pixels = project_to_pixels(world_pos, K, ext)  # Uses R.T @ (pos - t)
 
 ## 7. Known Discrepancies to Resolve Before Phase 2
 
-| Issue | Stage 1 | Stage 2 | Resolution Needed |
-|-------|---------|---------|-------------------|
-| **Focal length (px)** | 1400 | ~2667 (50mm/36mm) | Pick one; update both configs |
+| Issue | Stage 1 | Stage 2 | Resolution |
+|-------|---------|---------|------------|
+| **Focal length (px)** | `CameraRig.focal_px` = 2666.67 px (default) | 50mm/36mm → 2666.67 px | ✅ **RESOLVED** — unified on CameraRig field |
 | **Principal point** | (960, 540) | (960, 540) | ✅ Agrees |
 | **Image origin** | Top-left | Top-left | ✅ Agrees |
 | **Extrinsics storage** | World-to-camera R|t (implicit in P) | Camera-to-world 4×4 (Blender matrix_world) | Document conversion; use consistently |

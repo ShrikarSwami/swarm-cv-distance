@@ -217,12 +217,11 @@ drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
 |------------|-------|--------|
 | **Principal point** | (width/2, height/2) = (960, 540) for 1920×1080 | ✅ Verified in Stage 1 (`multiview_triangulation_test.py:61`) |
 | **Image origin** | Top-left (y-down) | ✅ Implied by OpenCV convention in Stage 1; **unverified in Stage 2** — marked pending round-trip validation |
-| **Focal length (Stage 1)** | 1400 px (hardcoded) | ⚠️ **MISMATCH** — Stage 2 uses 50mm/36mm → ~2667 px |
-| **Focal length (Stage 2)** | 50 mm, sensor_width=36mm → 2667 px | ⚠️ **MISMATCH** — must unify before Phase 2 |
+| **Focal length** | Now a **CameraRig field** (not module constant). Default = render pipeline's 50mm/36mm → **2666.67 px** | ✅ Unified in `data_contract.py`; Stage 1 and Stage 2 agree by construction |
 | **Sensor fit** | Horizontal (36mm width drives FOV) | ✅ Consistent |
-| **Extrinsics format** | Stage 1: world-to-camera R|t (implicit in P); Stage 2: camera-to-world 4×4 (Blender matrix_world) | ⚠️ Conversion documented, must use single convention |
+| **Extrinsics format** | Stage 1: world-to-camera R|t (implicit in P); Stage 2: camera-to-world 4×4 (Blender matrix_world) | ✅ Conversion documented, must use single convention |
 | **Coordinate frame** | ENU world, OpenCV camera (+Z forward, +Y down) | ✅ Stage 1 uses `R = [right, -up, forward]` |
-| **Blender→OpenCV conversion** | `M_cv = M_bl @ diag(1, -1, -1, 1)` then invert for world-to-camera | ✅ Documented |
+| **Blender→OpenCV conversion** | `M_cv = M_bl @ diag(1, -1, -1, 1)` then invert for world-to-camera | ✅ Documented in `data_contract.py` |
 
 **Disqualified:** `multiview_triangulation_test.py` correspondence logic (index-based oracle). Triangulation math (`triangulate_point`, `reconstruct_swarm`, `evaluate`) may be salvageable after audit.
 
@@ -234,17 +233,27 @@ drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
 
 Typed structures for the frozen interface:
 - `SwarmTruth`: positions (n_frames, n_drones, 3), drone_ids
-- `CameraRig`: K (n_views, 3, 3), w2c_R (n_views, 3, 3), w2c_t (n_views, 3), c2w (n_views, 4, 4), convention tag, geometry class
+- `CameraRig`: K (n_views, 3, 3), w2c_R (n_views, 3, 3), w2c_t (n_views, 3), c2w (n_views, 4, 4), **focal_px (float)**, convention tag, geometry class
 - `Detections`: per view, unordered 2D point arrays — **no identity field**
 - `Tracks`: per track, list of (view_idx, point_idx) members
 - `Reconstruction`: estimated 3D points, per-track reprojection error
 
 Conversion utilities with round-trip tests:
 - `blender_c2w_to_opencv_w2c()` / `opencv_w2c_to_blender_c2w()` — exact inverse
-- `make_K()` — single source for K matrix
-- `project_point()` / `unproject_point()` — projection round-trip verified
+- `make_K(focal_px)` — single source for K matrix (focal_px is now required argument)
+- `project_point()` / `project_points_batch()` — projection round-trip verified to 1e-12
 
 Self-tests pass: Blender↔OpenCV conversion exact, projection round-trip exact at known depth, all struct validation works.
+
+**Focal length decision (corrected 2026-07-29):** Focal length is now a `CameraRig` field defaulting to the render pipeline's actual value (50mm / 36mm sensor → 2666.67 px). This makes Phase 2 drop-in trivial — no nonstandard 26.25mm lens invented. Results in the final grid must be reported alongside the focal_px value used.
+
+## Triangulation Ownership (Stage B5)
+
+Triangulation is assigned to a **separate B5 subagent** (not inside B3). Interface defined in `data_contract.py`:
+- `triangulate_dlt(tracks, rig) -> Reconstruction` — linear DLT
+- `triangulate_dlt_then_refine(tracks, rig) -> Reconstruction` — DLT + Levenberg-Marquardt
+
+B5's audit of salvageable code from `multiview_triangulation_test.py` will be reported separately from its implementation. The triangulation code there may be fine; the correspondence around it is disqualified.
 
 ## Lessons learned (keep for reference)
 
