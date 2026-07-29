@@ -36,7 +36,7 @@ class HDPreset:
 PRESETS: Dict[str, HDPreset] = {
     "clear": HDPreset(
         name="clear",
-        asset_id="blue_photo_studio",
+        asset_id="kloofendal_43d_clear_puresky",  # Actual outdoor clear sky
         sun_azimuth=45.0,
         sun_elevation=60.0,
         strength=0.15,  # Sweep-confirmed: diff=25.6, center ~217, no clipping
@@ -50,7 +50,7 @@ PRESETS: Dict[str, HDPreset] = {
     ),
     "dusk": HDPreset(
         name="dusk",
-        asset_id="kiara_9_dusk",
+        asset_id="belfast_sunset_puresky",  # Actual outdoor sunset sky
         sun_azimuth=90.0,
         sun_elevation=15.0,
         strength=0.3,  # Sweep-confirmed: diff=31.2, shadow=east (correct for sun_azimuth=90°), center ~187
