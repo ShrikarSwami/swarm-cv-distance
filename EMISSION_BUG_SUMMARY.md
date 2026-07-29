@@ -76,27 +76,28 @@ Correct rotation is `(math.pi, 0, 0)` to rotate 180° around X axis, making the 
 4. **`eval_obj.visible_get()` is not reliable for render visibility** — it checks viewport depsgraph, not render depsgraph
 5. **Start with vanilla defaults** — the default scene works; only change what you need to change
 
-## HDRI shadow direction gotcha (2026-07-28)
+## HDRI shadow direction gotcha (2026-07-28, corrected)
 
-**Shadow direction may appear incorrect at high HDRI strength even with correct sun lamp rotation.**
+**The left/right brightness heuristic (comparing left-half vs right-half of a horizontal strip below drones) is unreliable for shadow direction.** At typical standoff distances (100m), shadows are only a few pixels long, and the test instead measures **HDRI illumination asymmetry** — the uneven brightness of the environment texture — which can produce results that contradict the actual shadow direction.
 
-This is because high ambient light from the HDRI environment texture washes out the directional shadow cast by the sun lamp. As HDRI strength drops, the sun lamp's directional shadow becomes visible and the correct direction emerges.
+**How to verify shadow direction correctly:**
+- Render a single tall object (pillar, 20m high) at close range (20m standoff) with the preset's tuned HDRI
+- Visually inspect which direction the shadow extends from the base
+- This is the only reliable method at these standoff distances
 
-**Evidence from dusk preset sweep:**
-- HDRI strength 1.2 → shadow direction west (WRONG — washed out)
-- HDRI strength 0.5 → shadow direction east (CORRECT — emerges as ambient drops)
-- HDRI strength 0.15 → shadow direction east (CORRECT, confirmed)
-
-**When debugging shadow direction:**
-1. Lower HDRI strength first before adjusting sun lamp rotation
-2. The correct direction may only be visible below the HDRI strength threshold where ambient light no longer dominates
-3. The wrong-direction-at-high-strength behavior is NORMAL, not a bug
+**Confirmed shadow directions (visual verification with tall pillars at each tuned strength):**
+| Preset | Sun Azimuth | Expected Direction | Confirmed |
+|--------|-------------|-------------------|-----------|
+| Clear (0.15) | 45° (NE) | LEFT (west-southwest) | LEFT ✓ |
+| Overcast (0.15) | 0° (N) | Toward camera (straight down, no left/right bias) | Straight down ✓ |
+| Dusk (0.3) | 90° (E) | LEFT (west) | LEFT ✓ |
 
 **Sweep methodology for future preset additions:**
-- Sweep down from current default across several values
-- Note where shadow direction stabilizes
-- Pick the strength that gives correct shadows AND good contrast
-- Don't chase sun lamp rotation if shadow looks off at high strength — the rotation is correct, the ambient washout is the cause
+- Sweep Background.Strength downward from the current default
+- At each strength, report raw center/background pixel values and diff (for contrast)
+- **Do NOT rely on the left/right brightness heuristic for shadow direction** — it measures HDRI asymmetry, not shadows
+- Verify shadow direction separately with a close-up tall-object render at the final chosen strength
+- Pick the strength that gives best contrast (highest diff without clipping) at the tuned value
 
 ## Project's actual render scripts
 
