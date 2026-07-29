@@ -39,21 +39,21 @@ PRESETS: Dict[str, HDPreset] = {
         asset_id="blue_photo_studio",
         sun_azimuth=45.0,
         sun_elevation=60.0,
-        strength=0.15,  # Sweep-confirmed: diff=23, center ~202, no clipping
+        strength=0.15,  # Sweep-confirmed: diff=25.6, center ~217, no clipping
     ),
     "overcast": HDPreset(
         name="overcast",
         asset_id="kloofendal_overcast_puresky",  # Genuine overcast: soft, diffuse lighting
         sun_azimuth=0.0,
         sun_elevation=45.0,
-        strength=0.15,  # Sweep-confirmed: diff=23, center ~198, no clipping
+        strength=0.15,  # Sweep-confirmed: diff=27.0, center ~217, no clipping
     ),
     "dusk": HDPreset(
         name="dusk",
         asset_id="kiara_9_dusk",
         sun_azimuth=90.0,
         sun_elevation=15.0,
-        strength=0.2,  # Sweep-confirmed: diff=25, center ~170, dusk-appropriate dim
+        strength=0.3,  # Sweep-confirmed: diff=31.2, shadow=east (correct for sun_azimuth=90°), center ~187
     ),
 }
 
