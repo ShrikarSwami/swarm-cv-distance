@@ -160,9 +160,12 @@ def main():
     out.format.color_depth = "32"
     print(f"  Compositor output format: {out.format.file_format}")
 
+    # Blender 5.2: must create file output items to get real (non-virtual) input sockets
+    out.file_output_items.new("FLOAT", "object_index")
+
     # Connect Object Index output if available
     if "Object Index" in [out.name for out in rl.outputs]:
-        tree.links.new(rl.outputs["Object Index"], out.inputs[0])
+        tree.links.new(rl.outputs["Object Index"], out.inputs["object_index"])
         print("  Connected Object Index output to compositor")
     else:
         print("  Object Index output not found in Render Layers node")

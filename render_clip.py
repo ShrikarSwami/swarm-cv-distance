@@ -220,6 +220,9 @@ bpy.context.evaluated_depsgraph_get().update()
 scene.view_layers[0].use_pass_object_index = True
 node_group = bpy.data.node_groups.new("ClipCompositing", "CompositorNodeTree")
 scene.compositing_node_group = node_group
+# Blender 5.2: compositor node group is separate from the old scene.node_tree;
+# the compositor must be activated with use_nodes (default in factory scenes).
+scene.use_nodes = True
 
 # ---------------------------------------------------------------------------
 # Render each view
