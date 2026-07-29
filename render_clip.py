@@ -50,10 +50,12 @@ for p in [project_root, addon_dir]:
         sys.path.insert(0, p)
 
 import bpy
-from mathutils import Vector, Matrix
+from mathutils import Vector, Matrix, Euler
 import swarm_scanner
 from blender_addon.environments import get_environment
 from blender_addon.weather import get_weather
+from blender_addon.terrain import ProceduralTerrain, configure_desert, configure_forest_floor
+from blender_addon.nishita_sky import nishita_sky_replace_hdri
 
 # ---------------------------------------------------------------------------
 # Generate swarm using addon
@@ -110,55 +112,39 @@ drone_count = sum(1 for o in bpy.data.objects if o.name.startswith("drone_"))
 print(f"[{cfg['clip_name']}] Drones created: {drone_count}")
 print(f"[{cfg['clip_name']}] Emission mat users: {emission_mat.users}")
 
-# Apply environment and weather presets
-# Apply environment first to create ground plane and sun light
-# Then apply weather to modify sun energy and world background
+# --- NEW: Procedural Terrain + Nishita Sky (replaces flat ground + HDRI) ---
 env_name = cfg.get("environment", "desert")
 weather_name = cfg.get("weather", "clear")
 
-env_preset = get_environment(env_name)
-env_result = env_preset.apply(scene)
+# 1. Create procedural terrain (replaces flat ground plane)
+terrain_seed = cfg.get("terrain_seed", cfg["seed"])
+terrain = ProceduralTerrain(seed=terrain_seed)
+if env_name == "desert":
+    configure_desert(terrain)
+elif env_name == "forest":
+    configure_forest_floor(terrain)
+else:
+    # Default to desert-like terrain for other environments
+    configure_desert(terrain)
+terrain_obj = terrain.build(scene)
+print(f"[{cfg['clip_name']}] Terrain created: {terrain_obj.name}")
 
-# Apply weather's sun energy modifier and world background color
-weather_preset = get_weather(weather_name)
-sun_found = False
-for obj in bpy.data.objects:
-    if obj.type == "LIGHT" and obj.data.type == "SUN":
-        old_energy = obj.data.energy
-        obj.data.energy = weather_preset.sun_energy
-        obj.data.color = weather_preset.sun_color[:3]
-        sun_found = True
-        print(f"[{cfg['clip_name']}] Sun energy: {old_energy} -> {obj.data.energy}")
-        break
-
-# Note: World background color blending is now handled by HDRI module
-# The HDRI apply() clears the world node tree and replaces with image-based lighting
-# This code is kept for reference but is no longer executed when HDRI is active
-# if scene.world and scene.world.use_nodes:
-#     bg = scene.world.node_tree.nodes.get("Background")
-#     if bg:
-#         # Blend environment sky color with weather ambient color
-#         env_color = np.array(env_preset.sky_color[:3])
-#         weather_color = np.array(weather_preset.ambient_color[:3])
-#         # Weight by sun energy ratio (higher energy = more environment color)
-#         energy_ratio = weather_preset.sun_energy / 5.0  # normalize to clear sky
-#         blended = env_color * energy_ratio + weather_color * (1 - energy_ratio)
-#         bg.inputs["Color"].default_value = (*blended, 1.0)
-#         print(f"[{cfg['clip_name']}] World BG: {list(bg.inputs['Color'].default_value)}")
-
-# Apply HDRI environment lighting (after weather preset)
-from blender_addon.hdri import apply as apply_hdri
-hdri_name = cfg.get("hdri", "clear")
-try:
-    apply_hdri(scene, hdri_name)
-    print(f"[{cfg['clip_name']}] HDRI: {hdri_name}")
-except Exception as e:
-    print(f"[{cfg['clip_name']}] HDRI failed: {e}")
-    raise
+# 2. Apply Nishita physical sky (replaces HDRI + separate sun sync)
+nishita_preset_map = {
+    "clear": "clear",
+    "overcast": "overcast",
+    "hazy": "clear",   # map hazy to clear with adjusted params
+    "dusk": "dusk",
+    "night": "dusk",   # map night to dusk (lowest sun)
+}
+nishita_preset = nishita_preset_map.get(weather_name, "clear")
+nishita_result = nishita_sky_replace_hdri(scene, nishita_preset)
+print(f"[{cfg['clip_name']}] Nishita sky: {nishita_preset}")
+print(f"[{cfg['clip_name']}] Sun energy: {nishita_result['sun_obj'].data.energy}")
+print(f"[{cfg['clip_name']}] Scene exposure: {scene.view_settings.exposure}")
 
 # Debug output
 print(f"[{cfg['clip_name']}] Objects: {[obj.name for obj in bpy.data.objects]}")
-print(f"[{cfg['clip_name']}] Sun found: {sun_found}")
 print(f"[{cfg['clip_name']}] World nodes: {[node.name for node in scene.world.node_tree.nodes] if scene.world and scene.world.use_nodes else 'None'}")
 
 # Place cameras in dome pattern
