@@ -209,6 +209,43 @@ drone is far below one pixel (~0.07px) at scene_config's 1920x1080 /
 - Camera count is adjustable in the addon (2-12, default 6); coverage at
   6 validated by real renders in M3
 
+## Camera Conventions (documented 2026-07-29)
+
+**Single source of truth:** `CAMERA_CONVENTIONS.md` (created 2026-07-29)
+
+| Convention | Value | Status |
+|------------|-------|--------|
+| **Principal point** | (width/2, height/2) = (960, 540) for 1920×1080 | ✅ Verified in Stage 1 (`multiview_triangulation_test.py:61`) |
+| **Image origin** | Top-left (y-down) | ✅ Implied by OpenCV convention in Stage 1; **unverified in Stage 2** — marked pending round-trip validation |
+| **Focal length (Stage 1)** | 1400 px (hardcoded) | ⚠️ **MISMATCH** — Stage 2 uses 50mm/36mm → ~2667 px |
+| **Focal length (Stage 2)** | 50 mm, sensor_width=36mm → 2667 px | ⚠️ **MISMATCH** — must unify before Phase 2 |
+| **Sensor fit** | Horizontal (36mm width drives FOV) | ✅ Consistent |
+| **Extrinsics format** | Stage 1: world-to-camera R|t (implicit in P); Stage 2: camera-to-world 4×4 (Blender matrix_world) | ⚠️ Conversion documented, must use single convention |
+| **Coordinate frame** | ENU world, OpenCV camera (+Z forward, +Y down) | ✅ Stage 1 uses `R = [right, -up, forward]` |
+| **Blender→OpenCV conversion** | `M_cv = M_bl @ diag(1, -1, -1, 1)` then invert for world-to-camera | ✅ Documented |
+
+**Disqualified:** `multiview_triangulation_test.py` correspondence logic (index-based oracle). Triangulation math (`triangulate_point`, `reconstruct_swarm`, `evaluate`) may be salvageable after audit.
+
+**Phase 1 blocker resolved:** No convention bug exists. The 75-pixel offset and handedness mismatch were unfounded. Phase 1 proceeds with epipolar correspondence solver (not yet built).
+
+## Data Contract (Stage A1 + A2 complete)
+
+**Created:** `stage1_geometry/data_contract.py` (2026-07-29)
+
+Typed structures for the frozen interface:
+- `SwarmTruth`: positions (n_frames, n_drones, 3), drone_ids
+- `CameraRig`: K (n_views, 3, 3), w2c_R (n_views, 3, 3), w2c_t (n_views, 3), c2w (n_views, 4, 4), convention tag, geometry class
+- `Detections`: per view, unordered 2D point arrays — **no identity field**
+- `Tracks`: per track, list of (view_idx, point_idx) members
+- `Reconstruction`: estimated 3D points, per-track reprojection error
+
+Conversion utilities with round-trip tests:
+- `blender_c2w_to_opencv_w2c()` / `opencv_w2c_to_blender_c2w()` — exact inverse
+- `make_K()` — single source for K matrix
+- `project_point()` / `unproject_point()` — projection round-trip verified
+
+Self-tests pass: Blender↔OpenCV conversion exact, projection round-trip exact at known depth, all struct validation works.
+
 ## Lessons learned (keep for reference)
 
 - Blender defaults bite at km scale: camera `clip_end` (render) and viewport
