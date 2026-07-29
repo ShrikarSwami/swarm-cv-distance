@@ -96,33 +96,33 @@ def main():
 
     scene.camera = cam
 
-    # Step 6: Create test cube drones
-    print("\n[6] Creating test cube drones")
-    for i in range(5):
-        x = (i - 2) * 10  # -20, -10, 0, 10, 20
-        bpy.ops.mesh.primitive_cube_add(size=2, location=(x, 0, 10))
-        cube = bpy.context.object
-        cube.name = f"Drone_{i:02d}"
+    # Step 6: Create test quadcopter drones
+    print("\n[6] Creating test quadcopter drones")
 
-        # Assign emission material (reduced strength to avoid overexposure)
-        mat = bpy.data.materials.new(f"DroneMat_{i:02d}")
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        links = mat.node_tree.links
-        for node in nodes:
-            nodes.remove(node)
+    # Build one emission material for all drones
+    mat = bpy.data.materials.new("DroneEmission")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    for node in nodes:
+        nodes.remove(node)
 
-        emission = nodes.new("ShaderNodeEmission")
-        emission.inputs["Strength"].default_value = 2.0  # Reduced from 10.0
-        emission.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
-        output = nodes.new("ShaderNodeOutputMaterial")
-        output.location = (200, 0)
-        links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    emission = nodes.new("ShaderNodeEmission")
+    emission.inputs["Strength"].default_value = 2.0
+    emission.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    output = nodes.new("ShaderNodeOutputMaterial")
+    output.location = (200, 0)
+    links.new(emission.outputs["Emission"], output.inputs["Surface"])
 
-        cube.data.materials.append(mat)
+    from blender_addon.quadcopter import build_quadcopter_template, create_drones_from_template
+    template = build_quadcopter_template(scale=2.0, emission_mat=mat)
+    positions = [(i * 10 - 20, 0, 10) for i in range(5)]
+    drones = create_drones_from_template(template, positions)
+    # Remove template (drones have their own mesh copies)
+    bpy.data.objects.remove(template, do_unlink=True)
 
-        # Set object index for EXR pass
-        cube.pass_index = i + 1
+    for d in drones:
+        print(f"  Created {d.name}: loc={d.location}, pass_index={d.pass_index}")
 
     # Step 7: Configure render passes for EXR with Object Index
     print("\n[7] Configuring render passes for EXR with Object Index")

@@ -97,14 +97,13 @@ if ebsdf:
     ebsdf.inputs["Emission Strength"].default_value = 100.0
     ebsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
 
-# Create drones with bpy.ops (required for Cycles/EEVEE evaluation)
-for i, pos in enumerate(positions):
-    bpy.ops.mesh.primitive_cube_add(size=DISPLAY_SCALE * 0.5, location=pos.tolist())
-    obj = bpy.context.active_object
-    obj.name = f"drone_{i:03d}"
-    obj.data.materials.clear()
-    obj.data.materials.append(emission_mat)
-    obj.pass_index = i + 1
+# Create drones as quadcopter silhouettes
+from blender_addon.quadcopter import build_quadcopter_template, create_drones_from_template
+qc_scale = DISPLAY_SCALE * 0.5  # visual size matching previous cube
+template = build_quadcopter_template(scale=qc_scale, emission_mat=emission_mat)
+drones = create_drones_from_template(template, positions)
+# Remove template (drones have their own mesh copies)
+bpy.data.objects.remove(template, do_unlink=True)
 
 # Verify
 drone_count = sum(1 for o in bpy.data.objects if o.name.startswith("drone_"))
