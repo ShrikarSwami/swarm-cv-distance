@@ -39,7 +39,7 @@ PRESETS: Dict[str, HDPreset] = {
         asset_id="blue_photo_studio",
         sun_azimuth=45.0,
         sun_elevation=60.0,
-        strength=1.0,
+        strength=0.15,  # Optimal: good contrast, shadows visible
     ),
     "overcast": HDPreset(
         name="overcast",
