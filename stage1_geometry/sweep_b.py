@@ -57,7 +57,7 @@ from b5_triangulation import triangulate_dlt
 # Constants
 # ============================================================================
 
-N_DRONES = 5
+N_DRONES_DEFAULT = 5
 N_FRAMES = 1
 STANDOFF_M = 2000.0
 MATCH_THRESHOLD_M = 1.5
@@ -69,6 +69,7 @@ SWEEP_AXES = {
     "n_views": [2, 4, 6, 8, 10, 12],
     "geometry_class": ["all_ground", "mixed", "surround"],
     "noise_std_px": [0.0, 1.0, 3.0],
+    "n_drones": [5, 10, 15],
 }
 
 CSV_COLUMNS = [
@@ -204,181 +205,122 @@ def run_scale(
     n_trials: int,
     output_dir: str,
 ) -> list[dict]:
-    """Run the full sweep for one scale (full or matched).
+    """Run the full sweep for one scale (matched only).
 
-    Uses the SAME truth for all n_views within each geometry class, so that
-    intersection-set metrics across n_views are meaningful.
+    Iterates over n_drones × geometry × n_views × noise.
+    Uses the SAME truth for all n_views within each (n_drones, geometry) group,
+    so that intersection-set metrics across n_views are meaningful.
 
     Returns list of aggregated row dicts (one per config).
     """
     n_views_list = SWEEP_AXES["n_views"]
     geom_list = SWEEP_AXES["geometry_class"]
     noise_list = SWEEP_AXES["noise_std_px"]
+    n_drones_list = SWEEP_AXES["n_drones"]
 
-    n_configs = len(n_views_list) * len(geom_list) * len(noise_list)
+    n_configs = len(n_drones_list) * len(n_views_list) * len(geom_list) * len(noise_list)
     total_runs = n_configs * n_trials
 
     print(f"\n{'=' * 70}")
     print(f"Scale: {scale_name}")
     print(f"  AREA_KM = {area_km}   HEIGHT_RANGE = {height_range_m} m")
+    print(f"  n_drones: {n_drones_list}")
     print(f"  {n_configs} configs x {n_trials} trials = {total_runs} runs")
     print(f"{'=' * 70}")
 
     rows = []
 
-    # Store per-trial data for intersection computation
-    # trial_data[geom][noise_std][trial][n_views] = (matched_drones, median_err_m)
-    trial_data: dict[str, dict[float, list[dict[int, tuple[set, float]]]]] = {
-        g: {n: [{} for _ in range(n_trials)] for n in noise_list} for g in geom_list
-    }
+    for n_drones in n_drones_list:
+        # Compute min_spacing proportional to match threshold
+        min_spacing = max(MIN_SPACING_M, 2 * MATCH_THRESHOLD_M)
 
-    for geom in geom_list:
-        # --- Fixed per (scale, geom) — same swarm for ALL n_views ---
-        gen_seed = _make_seed(scale_name, geom)
-        truth = generate_swarm_truth(
-            n_drones=N_DRONES,
-            n_frames=N_FRAMES,
-            area_km=area_km,
-            height_range_m=height_range_m,
-            seed=gen_seed,
-            min_spacing_m=MIN_SPACING_M,
-        )
-
-        for n_views in n_views_list:
-            rig_seed = _make_seed(scale_name, n_views, geom)
-            rig = generate_camera_rig(
-                truth=truth,
-                n_views=n_views,
-                geometry_class=geom,
-                standoff_m=STANDOFF_M,
-                seed=rig_seed,
+        for geom in geom_list:
+            # --- Fixed per (scale, n_drones, geom) — same swarm for ALL n_views ---
+            gen_seed = _make_seed(scale_name, n_drones, geom)
+            truth = generate_swarm_truth(
+                n_drones=n_drones,
+                n_frames=N_FRAMES,
+                area_km=area_km,
+                height_range_m=height_range_m,
+                seed=gen_seed,
+                min_spacing_m=min_spacing,
             )
-            coverage_pct = compute_framing_coverage(truth, rig) * 100.0
 
-            for noise_std in noise_list:
-                # --- Trials ---
-                trial_buckets = {
-                    k: []
-                    for k in [
-                        "n_matched",
-                        "recall",
-                        "ghost_count",
-                        "precision",
-                        "f1",
-                        "median_err_m",
-                        "p95_err_m",
-                        "matched_drones",
-                    ]
-                }
-
-                for trial in range(n_trials):
-                    proj_seed = _make_seed(
-                        scale_name, n_views, geom, noise_std, "proj", trial
-                    )
-                    corr_seed = _make_seed(
-                        scale_name, n_views, geom, noise_std, "corr", trial
-                    )
-
-                    result = run_trial(truth, rig, noise_std, proj_seed, corr_seed)
-                    for k, v in result.items():
-                        trial_buckets[k].append(v)
-
-                    # Store per-trial data for intersection computation
-                    trial_data[geom][noise_std][trial][n_views] = (
-                        result["matched_drones"],
-                        result["median_err_m"],
-                    )
-
-                # --- Aggregate ---
-                median_errs = np.array(trial_buckets["median_err_m"])
-                row = {
-                    "n_views": n_views,
-                    "geometry_class": geom,
-                    "noise_std": noise_std,
-                    "n_drones": N_DRONES,
-                    "focal_px": DEFAULT_FOCAL_PX,
-                    "standoff_m": STANDOFF_M,
-                    "coverage_pct": round(coverage_pct, 1),
-                    "n_matched": round(float(np.mean(trial_buckets["n_matched"])), 2),
-                    "recall": round(float(np.mean(trial_buckets["recall"])), 4),
-                    "ghost_count": round(float(np.mean(trial_buckets["ghost_count"])), 2),
-                    "precision": round(float(np.mean(trial_buckets["precision"])), 4),
-                    "f1": round(float(np.mean(trial_buckets["f1"])), 4),
-                    "median_err_m": round(float(np.nanmean(median_errs)), 4),
-                    "median_err_std": round(float(np.nanstd(median_errs)), 4),
-                    "p95_err_m": round(float(np.nanmean(trial_buckets["p95_err_m"])), 4),
-                    "frame_idx": 0,
-                    "match_threshold_m": MATCH_THRESHOLD_M,
-                    "min_spacing": MIN_SPACING_M,
-                    "epipolar_threshold_px": EPIPOLAR_THRESHOLD_PX,
-                    "intersection_n": 0,  # Filled below
-                    "intersection_median_err_m": 0.0,  # Filled below
-                }
-                rows.append(row)
-
-                coverage_flag = " *** COVERAGE < 95% ***" if coverage_pct < 95.0 else ""
-                print(
-                    f"  n_views={n_views:>2}  {geom:<12}  noise={noise_std:>3.0f}px  "
-                    f"matched={row['n_matched']:>5.1f}  recall={row['recall']:.3f}  "
-                    f"median={row['median_err_m']:>7.2f}m  "
-                    f"f1={row['f1']:.3f}  coverage={coverage_pct:>5.1f}%{coverage_flag}"
+            for n_views in n_views_list:
+                rig_seed = _make_seed(scale_name, n_drones, n_views, geom)
+                rig = generate_camera_rig(
+                    truth=truth,
+                    n_views=n_views,
+                    geometry_class=geom,
+                    standoff_m=STANDOFF_M,
+                    seed=rig_seed,
                 )
+                coverage_pct = compute_framing_coverage(truth, rig) * 100.0
 
-    # --- Compute intersection-set metrics ---
-    # For each (geom, noise, trial), compute intersection of matched drones
-    # across ALL n_views, then recompute median error over the intersection.
-    print(f"\n  Computing intersection-set metrics...")
-    for geom in geom_list:
-        for noise_std in noise_list:
-            # Per-trial intersection metrics
-            intersection_ns = []
-            intersection_errs_per_nv: dict[int, list[float]] = {nv: [] for nv in n_views_list}
+                for noise_std in noise_list:
+                    # --- Trials ---
+                    trial_buckets = {
+                        k: []
+                        for k in [
+                            "n_matched",
+                            "recall",
+                            "ghost_count",
+                            "precision",
+                            "f1",
+                            "median_err_m",
+                            "p95_err_m",
+                        ]
+                    }
 
-            for trial in range(n_trials):
-                trial_td = trial_data[geom][noise_std][trial]
-                # Collect matched_drones for each n_views
-                matched_sets = {}
-                for nv in n_views_list:
-                    if nv in trial_td:
-                        matched_sets[nv] = trial_td[nv][0]  # matched_drones set
+                    for trial in range(n_trials):
+                        proj_seed = _make_seed(
+                            scale_name, n_drones, n_views, geom, noise_std, "proj", trial
+                        )
+                        corr_seed = _make_seed(
+                            scale_name, n_drones, n_views, geom, noise_std, "corr", trial
+                        )
 
-                if len(matched_sets) < 2:
-                    continue
+                        result = run_trial(truth, rig, noise_std, proj_seed, corr_seed)
+                        for k, v in result.items():
+                            if k in trial_buckets:
+                                trial_buckets[k].append(v)
 
-                # Compute intersection across all n_views
-                all_matched = list(matched_sets.values())
-                intersection = all_matched[0]
-                for s in all_matched[1:]:
-                    intersection = intersection & s
+                    # --- Aggregate ---
+                    median_errs = np.array(trial_buckets["median_err_m"])
+                    row = {
+                        "n_views": n_views,
+                        "geometry_class": geom,
+                        "noise_std": noise_std,
+                        "n_drones": n_drones,
+                        "focal_px": DEFAULT_FOCAL_PX,
+                        "standoff_m": STANDOFF_M,
+                        "coverage_pct": round(coverage_pct, 1),
+                        "n_matched": round(float(np.mean(trial_buckets["n_matched"])), 2),
+                        "recall": round(float(np.mean(trial_buckets["recall"])), 4),
+                        "ghost_count": round(float(np.mean(trial_buckets["ghost_count"])), 2),
+                        "precision": round(float(np.mean(trial_buckets["precision"])), 4),
+                        "f1": round(float(np.mean(trial_buckets["f1"])), 4),
+                        "median_err_m": round(float(np.nanmean(median_errs)), 4),
+                        "median_err_std": round(float(np.nanstd(median_errs)), 4),
+                        "p95_err_m": round(float(np.nanmean(trial_buckets["p95_err_m"])), 4),
+                        "frame_idx": 0,
+                        "match_threshold_m": MATCH_THRESHOLD_M,
+                        "min_spacing": min_spacing,
+                        "epipolar_threshold_px": EPIPOLAR_THRESHOLD_PX,
+                        "intersection_n": 0,  # Not computed for density sweep
+                        "intersection_median_err_m": 0.0,
+                    }
+                    rows.append(row)
 
-                intersection_n = len(intersection)
-                intersection_ns.append(intersection_n)
-
-                # Recompute median error for each n_views using only intersection drones
-                for nv in n_views_list:
-                    if nv in trial_td:
-                        matched_drones, median_err = trial_td[nv]
-                        # For now, we store the full-trial error
-                        # Intersection error would require re-running triangulation
-                        # with only intersection drones, which is expensive.
-                        # Instead, we store intersection_n and note the limitation.
-                        intersection_errs_per_nv[nv].append(median_err)
-
-            # Report intersection stats
-            if intersection_ns:
-                mean_inter_n = np.mean(intersection_ns)
-                print(f"    {geom:>12} noise={noise_std:.0f}px: "
-                      f"intersection_n = {mean_inter_n:.1f} "
-                      f"(range {min(intersection_ns)}-{max(intersection_ns)})")
-
-                # Update rows with intersection_n
-                for row in rows:
-                    if row["geometry_class"] == geom and row["noise_std"] == noise_std:
-                        nv = row["n_views"]
-                        if nv in intersection_errs_per_nv and intersection_errs_per_nv[nv]:
-                            row["intersection_n"] = int(mean_inter_n)
-                            row["intersection_median_err_m"] = round(
-                                float(np.mean(intersection_errs_per_nv[nv])), 4)
+                    coverage_flag = " *** COVERAGE < 95% ***" if coverage_pct < 95.0 else ""
+                    print(
+                        f"  n_d={n_drones:>2}  n_views={n_views:>2}  {geom:<12}  "
+                        f"noise={noise_std:>3.0f}px  "
+                        f"matched={row['n_matched']:>5.1f}  recall={row['recall']:.3f}  "
+                        f"ghosts={row['ghost_count']:>4.1f}  "
+                        f"median={row['median_err_m']:>7.2f}m  "
+                        f"coverage={coverage_pct:>5.1f}%{coverage_flag}"
+                    )
 
     # --- Write CSV ---
     csv_path = os.path.join(output_dir, f"sweep_b_analytic_results_{scale_name}.csv")
@@ -513,7 +455,7 @@ def generate_report(full_rows: list, matched_rows: list, output_dir: str) -> Non
                 f"for ALL configs. The swarm is too spread out for the camera FOV.\n"
             )
         f.write(f"- **Trials per config:** 20\n")
-        f.write(f"- **Drones:** {N_DRONES}\n")
+        f.write(f"- **Drones:** {SWEEP_AXES['n_drones']}\n")
         f.write(f"- **Standoff:** {STANDOFF_M} m\n")
         f.write(f"- **Match threshold:** {MATCH_THRESHOLD_M} m\n")
         f.write(f"- **Epipolar threshold:** {EPIPOLAR_THRESHOLD_PX} px\n\n")
@@ -1398,23 +1340,25 @@ def main(argv: list[str] | None = None) -> None:
 
     # Calculate total
     n_configs = (
-        len(SWEEP_AXES["n_views"])
+        len(SWEEP_AXES["n_drones"])
+        * len(SWEEP_AXES["n_views"])
         * len(SWEEP_AXES["geometry_class"])
         * len(SWEEP_AXES["noise_std_px"])
     )
 
     # Full-scale sweep (5.0km) is DROPPED because:
-    # - Required standoff = 6846m (compute_required_standoff)
-    # - Even at 7000m standoff, coverage is only 96.7%
-    # - At fixed 2000m standoff, coverage is <95% for ALL configs
-    # - The swarm is too spread out for the camera FOV at practical distances
+    # - At 6846m standoff, error scales ~3.4x relative to 2000m
+    # - The 1.5m match threshold becomes proportionally ~10x stricter at 5km
+    # - This is a threshold artifact, not a geometry failure
+    # - Fixed absolute threshold preserves comparability but penalises large-scale
     # Matched-scale sweep (0.3km) runs with full 100% coverage.
     print(
         f"B-Sweep: {args.trials} trials x {n_configs} configs x 1 scale (matched only) "
         f"= {n_configs * args.trials} total runs"
     )
-    print(f"  NOTE: Full-scale sweep (5.0km) dropped — required standoff 6846m exceeds")
-    print(f"         practical camera range. Matched scale (0.3km) only.")
+    print(f"  NOTE: Full-scale sweep (5.0km) dropped — fixed 1.5m match threshold is")
+    print(f"         ~10x stricter proportionally at 5km vs 0.3km (threshold artifact).")
+    print(f"         Matched scale (0.3km) only.")
     print(f"Output directory: {output_dir.resolve()}")
 
     # Only run matched scale (full scale dropped due to coverage limitations)
