@@ -35,12 +35,13 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 import blf
 import bpy
 import gpu
 import numpy as np
-from bpy.props import EnumProperty, FloatProperty, IntProperty, PointerProperty
+from bpy.props import EnumProperty, FloatProperty, IntProperty, PointerProperty, StringProperty
 from bpy.types import Operator, Panel, PropertyGroup
 from gpu_extras.batch import batch_for_shader
 
@@ -49,14 +50,29 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 _STAGE1_DIR = os.path.join(_REPO_ROOT, "stage1_geometry")
 if _STAGE1_DIR not in sys.path:
     sys.path.insert(0, _STAGE1_DIR)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 try:
     import multiview_triangulation_test as mvt
     import scene_config
+    from data_contract import (
+        SwarmTruth,
+        CameraRig,
+        make_K,
+        CONVENTION_TAG,
+        blender_c2w_to_opencv_w2c,
+    )
+    from b1_scene_rig import (
+        compute_framing_coverage_detailed,
+        compute_required_standoff,
+    )
     _IMPORT_ERROR = None
 except ImportError as exc:  # loaded outside the repo (e.g. via Install...)
     mvt = None
     scene_config = None
+    SwarmTruth = CameraRig = make_K = CONVENTION_TAG = blender_c2w_to_opencv_w2c = None
+    compute_framing_coverage_detailed = compute_required_standoff = None
     _IMPORT_ERROR = str(exc)
 
 # Formation presets live alongside the addon (pure-numpy, no bpy dependency).
@@ -196,6 +212,24 @@ class SwarmScanSettings(PropertyGroup):
             "the real render, not this seed"
         ),
         default=1, min=0,
+    )
+
+    # --- Export bundle ---
+    export_output_dir: StringProperty(
+        name="Output Directory",
+        description="Directory to write the capture bundle to",
+        default="//exports/bundle",
+        subtype='DIR_PATH',
+    )
+    export_scene_id: StringProperty(
+        name="Scene ID",
+        description="Unique identifier for this capture session",
+        default="export_001",
+    )
+    export_render_samples: IntProperty(
+        name="Render Samples",
+        description="Cycles render samples per view for bundle export",
+        default=128, min=8, max=4096,
     )
 
 
@@ -849,6 +883,238 @@ class SWARM_OT_scan(Operator):
         return {"FINISHED"}
 
 
+# --- Export bundle -----------------------------------------------------------
+
+
+class SWARM_OT_export_bundle(Operator):
+    bl_idname = "swarm_scan.export_bundle"
+    bl_label = "Export Bundle"
+    bl_description = (
+        "Render synchronized frames across all cameras, check framing "
+        "coverage, and write the bundle directory"
+    )
+    bl_options = {"REGISTER"}
+
+    @classmethod
+    def poll(cls, context):
+        coll = bpy.data.collections.get(SWARM_COLLECTION)
+        rig = bpy.data.collections.get(RIG_COLLECTION)
+        if coll is None or rig is None:
+            return False
+        if len(coll.objects) < 2:
+            return False
+        n_cams = sum(1 for o in rig.objects if o.type == "CAMERA")
+        return n_cams >= 2
+
+    def execute(self, context):
+        if _IMPORT_ERROR is not None:
+            self.report(
+                {"ERROR"},
+                f"stage1_geometry import failed: {_IMPORT_ERROR}",
+            )
+            return {"CANCELLED"}
+
+        settings = context.scene.swarm_scan
+        output_dir = bpy.path.abspath(settings.export_output_dir)
+        scene_id = settings.export_scene_id
+        render_samples = settings.export_render_samples
+
+        # --- Validate swarm ---
+        swarm_coll = bpy.data.collections.get(SWARM_COLLECTION)
+        if swarm_coll is None or len(swarm_coll.objects) < 2:
+            self.report({"ERROR"}, "Generate a swarm first (2+ drones)")
+            return {"CANCELLED"}
+
+        # --- Validate cameras ---
+        rig_coll = bpy.data.collections.get(RIG_COLLECTION)
+        cams = sorted(
+            (o for o in (rig_coll.objects or []) if o.type == "CAMERA"),
+            key=lambda o: o.name,
+        ) if rig_coll else []
+        if len(cams) < 2:
+            self.report({"ERROR"}, "Place a camera rig (2+ cameras) first")
+            return {"CANCELLED"}
+
+        # --- Build SwarmTruth from scene objects ---
+        drones = sorted(swarm_coll.objects, key=lambda o: o.name)
+        positions = np.array(
+            [obj.location[:] for obj in drones], dtype=np.float64
+        )
+        positions = positions.reshape(1, -1, 3)  # (1, n_drones, 3)
+        drone_ids = np.arange(len(drones), dtype=np.int32)
+        truth = SwarmTruth(positions=positions, drone_ids=drone_ids)
+
+        # --- Build CameraRig from Blender camera objects ---
+        focal_px = scene_config.FOCAL_PX
+        K_mat = make_K(focal_px)
+        K_list, w2c_R_list, w2c_t_list, c2w_list = [], [], [], []
+        for cam_obj in cams:
+            c2w_4x4 = np.array(cam_obj.matrix_world, dtype=np.float64)
+            c2w_list.append(c2w_4x4)
+            R_w2c, t_w2c = blender_c2w_to_opencv_w2c(c2w_4x4)
+            w2c_R_list.append(R_w2c)
+            w2c_t_list.append(t_w2c)
+            K_list.append(K_mat)
+
+        rig = CameraRig(
+            K=np.stack(K_list),
+            w2c_R=np.stack(w2c_R_list),
+            w2c_t=np.stack(w2c_t_list),
+            c2w=np.stack(c2w_list),
+            focal_px=focal_px,
+            convention=CONVENTION_TAG,
+            geometry_class="mixed",
+        )
+
+        # --- Framing check ---
+        overall, per_view = compute_framing_coverage_detailed(truth, rig)
+        if overall < 1.0:
+            missing_views = [v for v, cov in per_view.items() if cov < 1.0]
+            required = compute_required_standoff(truth, focal_px)
+            self.report(
+                {"ERROR"},
+                f"Coverage {overall * 100:.0f}%: views {missing_views} "
+                "see <100% of drones. "
+                f"Increase standoff (requires ≥{required:.0f}m) "
+                "or adjust camera placement.",
+            )
+            return {"CANCELLED"}
+
+        # --- Create bundle directory structure ---
+        views_dir = os.path.join(output_dir, "views")
+        os.makedirs(views_dir, exist_ok=True)
+
+        # --- Render frames ---
+        t0 = time.time()
+        self._render_frames(context.scene, cams, views_dir, render_samples)
+        render_time = time.time() - t0
+
+        # --- Write bundle files ---
+        self._write_bundle(output_dir, truth, rig, overall, scene_id)
+
+        self.report(
+            {"INFO"},
+            f"Bundle exported to {output_dir} "
+            f"({render_time:.0f}s render, "
+            f"{overall * 100:.0f}% coverage)",
+        )
+        return {"FINISHED"}
+
+    def _render_frames(self, scene, cams, views_dir, samples):
+        """Render RGB PNG and ID EXR for each camera view."""
+        orig_fmt = scene.render.image_settings.file_format
+        orig_fp = scene.render.filepath
+        orig_engine = scene.render.engine
+
+        scene.render.resolution_x, scene.render.resolution_y = scene_config.IMAGE_SIZE
+        scene.render.resolution_percentage = 100
+        scene.render.engine = "CYCLES"
+        scene.cycles.samples = samples
+        scene.view_layers[0].use_pass_object_index = True
+
+        try:
+            for i, cam_obj in enumerate(cams):
+                scene.camera = cam_obj
+                view_dir = os.path.join(views_dir, f"cam_{i:02d}")
+                os.makedirs(view_dir, exist_ok=True)
+
+                # Render 1: RGB PNG (no compositing)
+                scene.compositing_node_group = None
+                scene.render.filepath = os.path.join(view_dir, "frame_0000")
+                scene.render.image_settings.file_format = "PNG"
+                scene.render.image_settings.color_mode = "RGB"
+                bpy.ops.render.render(write_still=True)
+
+                # Render 2: Object Index EXR via compositor
+                self._render_view_id_exr(scene, view_dir)
+        finally:
+            scene.render.image_settings.file_format = orig_fmt
+            scene.render.filepath = orig_fp
+            scene.render.engine = orig_engine
+
+    @staticmethod
+    def _render_view_id_exr(scene, view_dir):
+        """Render the current camera's Object Index pass to EXR via compositor."""
+        node_group = bpy.data.node_groups.new(
+            "SwarmExportID", "CompositorNodeTree"
+        )
+        scene.compositing_node_group = node_group
+        try:
+            render_layers = node_group.nodes.new("CompositorNodeRLayers")
+            id_out = node_group.nodes.new("CompositorNodeOutputFile")
+            id_out.directory = view_dir + os.sep
+            id_out.file_name = "frame_0000"
+            id_out.file_output_items.clear()
+            id_out.file_output_items.new("FLOAT", "id_")
+            id_out.format.file_format = "OPEN_EXR_MULTILAYER"
+            id_out.format.color_depth = "32"
+            node_group.links.new(
+                render_layers.outputs["Object Index"],
+                id_out.inputs["id_"],
+            )
+            bpy.ops.render.render(write_still=True)
+        finally:
+            bpy.data.node_groups.remove(node_group)
+            scene.compositing_node_group = None
+
+    @staticmethod
+    def _write_bundle(output_dir, truth, rig, coverage, scene_id):
+        """Write manifest.json, poses.json, and ground_truth.json."""
+        from bundle_schema import (
+            BundleManifest,
+            BundlePoses,
+            BundleGroundTruth,
+        )
+
+        n_views = rig.n_views
+
+        # --- Manifest ---
+        manifest_data = {
+            "bundle_version": "1.0",
+            "scene_id": scene_id,
+            "format": "png",
+            "n_views": n_views,
+            "n_frames": 1,
+            "frame_indices": [0],
+            "image_size_px": list(scene_config.IMAGE_SIZE),
+            "focal_px": scene_config.FOCAL_PX,
+            "sensor_width_mm": 36.0,
+            "units": "meters",
+            "has_ground_truth": True,
+            "coverage_pct": round(coverage * 100, 1),
+            "sync_convention": "all cameras render same frame indices",
+            "generated_by": {
+                "operator": "SWARM_OT_export_bundle",
+                "version": "0.1.0",
+            },
+        }
+        manifest = BundleManifest(**manifest_data)
+        with open(os.path.join(output_dir, "manifest.json"), "w") as f:
+            f.write(manifest.model_dump_json(indent=2))
+
+        # --- Poses ---
+        poses_views = []
+        for v in range(n_views):
+            poses_views.append({
+                "view_idx": v,
+                "K": rig.K[v].tolist(),
+                "c2w": rig.c2w[v].tolist(),
+                "w2c_R": rig.w2c_R[v].tolist(),
+                "w2c_t": rig.w2c_t[v].tolist(),
+            })
+        poses = BundlePoses(convention=CONVENTION_TAG, views=poses_views)
+        with open(os.path.join(output_dir, "poses.json"), "w") as f:
+            f.write(poses.model_dump_json(indent=2))
+
+        # --- Ground truth ---
+        gt = BundleGroundTruth(
+            drone_ids=truth.drone_ids.tolist(),
+            positions=truth.positions.tolist(),
+        )
+        with open(os.path.join(output_dir, "ground_truth.json"), "w") as f:
+            f.write(gt.model_dump_json(indent=2))
+
+
 def _draw_scan_edges():
     if not _LAST_SCAN:
         return
@@ -959,6 +1225,13 @@ class SWARM_PT_panel(Panel):
             near = _LAST_SCAN["near_threshold_accuracy"]
             box.label(text=f"Near-threshold: {near * 100:.1f}%" if near is not None else "Near-threshold: n/a")
 
+        box = layout.box()
+        box.label(text="Export Bundle", icon="EXPORT")
+        box.prop(settings, "export_output_dir")
+        box.prop(settings, "export_scene_id")
+        box.prop(settings, "export_render_samples")
+        box.operator(SWARM_OT_export_bundle.bl_idname, icon="RENDER_ANIMATION")
+
 
 _CLASSES = (
     SwarmScanSettings,
@@ -968,6 +1241,7 @@ _CLASSES = (
     SWARM_OT_place_cameras,
     SWARM_OT_toggle_aim,
     SWARM_OT_scan,
+    SWARM_OT_export_bundle,
     SWARM_PT_panel,
 )
 
