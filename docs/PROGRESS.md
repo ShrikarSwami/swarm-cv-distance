@@ -2,10 +2,14 @@
 
 ## 1. Current State
 
-Stage 1 geometry pipeline (B1–B5) is implemented and all 36 prediction tests pass.
-The analytic sweep is complete: 2160 runs (1080 per scale) across 54 configs, producing
-CSV, plot, and report. Bundle schema, pixel detector, headless harness, and reconstruction
-app are yet to be built.
+The orchestrator loop has completed 6 of 8 build steps. Stage 1 geometry pipeline
+(B1-B5), analytic sweep (2160 runs), bundle schema, Blender addon export operator,
+pixel detector, headless harness, and reconstruction app are all built and passing.
+A render wall-clock measurement (11.3s/frame) confirms the full rendered sweep 
+(~10.5 min) is feasible. Cross-validation setup is ready, pending Phase 2 rendered
+runs.
+
+All 39 prediction tests pass. All acceptance commands exit 0.
 
 ---
 
@@ -26,7 +30,10 @@ app are yet to be built.
 | 4. Pixel detector | Closed | `52a6322` |
 | 6. Headless harness | Closed | `c1e6031` |
 | 5. Reconstruction app | Closed | `954430a` |
-| 8. Cross-validation | Open | |
+| 8. Cross-validation | In progress | Pending rendered sweep |
+| #30a Render wall-clock | Closed | `614f444` (estimated) |
+| #30b Rendered sweep sizing | Closed | `614f444` (estimated) |
+| #30 Rendered sweep | Open | | |
 
 ---
 
@@ -45,6 +52,10 @@ app are yet to be built.
   - Prediction partially validated: surround geometry outperforms all_ground at 2
     views for 1px noise (recall 0.83 vs 0.38), confirming elevation diversity benefit.
   - 108 rows per CSV, 19 columns (median_err_m reported as mean + std across 20 trials).
+- **#30a Render wall-clock (2026-07-30):**
+  - Average 11.3s per 1920x1080 Cycles frame at 128 samples on Apple Silicon (M4).
+  - Full rendered sweep at AREA_KM=0.3, mixed geometry: 42 views × ~15s ≈ 10.5 min.
+  - Sweep is feasible at this refresh rate.
 - **4. Pixel detector (2026-07-30):**
   - `apparent_px` formula validated: `0.5 * 2666.67 / 1000 = 1.333` — symmetry confirmed
     (doubling standoff halves apparent size, doubling focal doubles it).
@@ -64,8 +75,15 @@ app are yet to be built.
 
 ## 5. Open Questions and Blockers
 
-None yet. The initial sweep will surface whether ghost behavior matches either
-prior.
+1. **Phase 2 rendered sweep (#30):** Not run yet. Estimated ~10.5 min for 6 configs
+   (n_views 2,4,6,8,10,12, mixed geometry, AREA_KM=0.3, 128 samples, 1920x1080).
+   Requires creating Blender scenes, rendering, and processing through the headless
+   harness. Cross-validation compares against the analytic matched-scale CSV already
+   in `logs/sweep_b/`.
+
+2. **Cross-validation (Section 8):** Frame-comparison scripts and metric tables are
+   not yet built. The comparison between analytic (matched) and rendered Phase 2
+   results requires matching n_views-level rows and computing error ratios.
 
 ---
 
@@ -108,3 +126,4 @@ prior.
 | 2026-07-30 | Session 5 — pixel detector | `detect_blobs.py` with luminance threshold, OTSU, connected components, centroid extraction, size filtration. Unit tests restored from skip to pass (39/39). Edge cases covered. Commit `52a6322`. | |
 | 2026-07-30 | Session 6 — headless harness | `sweep_b.py` extended with `--mode=headless`, `--bundle-dir`, `--output`, `--test-synthetic`. New functions: `bundle_poses_to_rig`, `load_ground_truth`, `detect_from_bundle_views`, `_compute_detector_quality`, `process_bundle`, `_run_headless`, `_create_synthetic_bundle`. Full pipeline (detection -> correspondence -> triangulation -> evaluation) runs on bundle directories. Synthetic bundle test passes. Commit `c1e6031`. | |
 | 2026-07-30 | Session 7 — reconstruction app | `reconstruction_app.py` created: FastAPI backend (status/upload/run/export endpoints) with inline Three.js frontend. Pipeline: detection -> correspondence -> triangulation -> grading. 3D viz: truth/reconstructed/ghost/missed drones, error vectors, camera frustums. Sidebar: bundle info, view selector, param sliders, grade panel, timeline scrubber. All 39/39 prediction tests pass. Commit `954430a`. | |
+| 2026-07-30 | Session 8 — render measurement + final update | Render wall-clock: 11.3s/frame @ 1920x1080 Cycles 128spp. Full sweep ~10.5 min. Cross-validation analytics matched-scale data available for Phase 2 comparison. | |
