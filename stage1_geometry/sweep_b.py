@@ -25,12 +25,23 @@ from pathlib import Path
 
 import numpy as np
 
-# Ensure stage1_geometry is on sys.path for direct imports.
+# Ensure stage1_geometry and project root are on sys.path for direct imports.
 _stage1_dir = os.path.dirname(os.path.abspath(__file__))
 if _stage1_dir not in sys.path:
     sys.path.insert(0, _stage1_dir)
+_project_root = os.path.dirname(_stage1_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
-from data_contract import DEFAULT_FOCAL_PX
+from data_contract import (
+    DEFAULT_FOCAL_PX,
+    CONVENTION_TAG,
+    SwarmTruth,
+    CameraRig,
+    Detections,
+    IMAGE_SIZE,
+    blender_c2w_to_opencv_w2c,
+)
 from b1_scene_rig import (
     generate_swarm_truth,
     generate_camera_rig,
@@ -80,6 +91,31 @@ CSV_COLUMNS = [
     "match_threshold_m",
     "min_spacing",
     "epipolar_threshold_px",
+]
+
+HEADLESS_CSV_COLUMNS = [
+    "n_views",
+    "geometry_class",
+    "noise_std",
+    "n_drones",
+    "focal_px",
+    "standoff_m",
+    "coverage_pct",
+    "n_matched",
+    "recall",
+    "ghost_count",
+    "precision",
+    "f1",
+    "median_err_m",
+    "p95_err_m",
+    "frame_idx",
+    "match_threshold_m",
+    "min_spacing",
+    "epipolar_threshold_px",
+    "detector_recall",
+    "fp_per_frame",
+    "centroid_error_px",
+    "merged_detections",
 ]
 
 
@@ -475,19 +511,734 @@ def generate_report(full_rows: list, matched_rows: list, output_dir: str) -> Non
 
 
 # ============================================================================
+# Headless Mode — Bundle Processing
+# ============================================================================
+
+# Default values for headless mode
+DRONE_SIZE_M = 0.5
+DETECTION_MATCH_THRESHOLD_PX = 10.0
+
+
+def _read_image(path: str) -> np.ndarray | None:
+    """Read an image file and return as uint8 RGB (H, W, 3) array.
+
+    Tries PIL first, then matplotlib as fallback.
+    Returns None if no reader is available or the file can't be read.
+    """
+    img = None
+    try:
+        from PIL import Image
+
+        img_pil = Image.open(path).convert("RGB")
+        img = np.array(img_pil, dtype=np.uint8)
+    except ImportError:
+        pass
+    except Exception:
+        return None  # PIL opened the file but it's corrupt
+
+    if img is not None:
+        return img
+
+    try:
+        import matplotlib.pyplot as plt
+
+        arr = plt.imread(path)
+        if arr.ndim == 2:
+            arr = np.stack([arr] * 3, axis=-1)
+        elif arr.shape[2] == 4:
+            arr = arr[:, :, :3]
+        if arr.dtype == np.float64 or arr.dtype == np.float32:
+            arr = (arr * 255).astype(np.uint8)
+        else:
+            arr = arr.astype(np.uint8)
+        img = arr
+    except ImportError:
+        pass
+    except Exception:
+        return None
+
+    return img
+
+
+def _compute_standoff_from_poses(
+    rig: CameraRig,
+    swarm_center: np.ndarray | None = None,
+) -> float:
+    """Compute average standoff distance from camera positions to swarm center.
+
+    If swarm_center is None, uses origin (0, 0, 0).
+    """
+    if swarm_center is None:
+        swarm_center = np.zeros(3, dtype=np.float64)
+
+    distances = []
+    for v in range(rig.n_views):
+        cam_pos = rig.c2w[v, :3, 3]
+        dist = float(np.linalg.norm(cam_pos - swarm_center))
+        distances.append(dist)
+
+    return float(np.mean(distances)) if distances else 1000.0
+
+
+def bundle_poses_to_rig(
+    poses: "BundlePoses",
+    manifest: "BundleManifest",
+) -> CameraRig:
+    """Convert BundlePoses to CameraRig format.
+
+    Converts Blender c2w matrices to OpenCV w2c representation and
+    constructs a validated CameraRig instance.
+
+    Args:
+        poses: Validated BundlePoses from poses.json.
+        manifest: Validated BundleManifest from manifest.json.
+
+    Returns:
+        CameraRig ready for the stage-1 pipeline.
+    """
+    n_views = len(poses.views)
+
+    K_list = []
+    w2c_R_list = []
+    w2c_t_list = []
+    c2w_list = []
+
+    for v in poses.views:
+        K = np.array(v.K, dtype=np.float64)
+        K_list.append(K)
+
+        c2w = np.array(v.c2w, dtype=np.float64)
+        c2w_list.append(c2w)
+
+        R_w2c, t_w2c = blender_c2w_to_opencv_w2c(c2w)
+        w2c_R_list.append(R_w2c)
+        w2c_t_list.append(t_w2c)
+
+    # Determine geometry_class from manifest generated_by if available.
+    geometry_class: str = "unknown"
+    if manifest.generated_by and "geometry_class" in manifest.generated_by:
+        gc = manifest.generated_by["geometry_class"]
+        if gc in ("all_ground", "mixed", "surround"):
+            geometry_class = gc
+
+    # Determine focal_px from manifest.
+    focal_px = manifest.focal_px
+
+    rig = CameraRig(
+        K=np.stack(K_list),
+        w2c_R=np.stack(w2c_R_list),
+        w2c_t=np.stack(w2c_t_list),
+        c2w=np.stack(c2w_list),
+        focal_px=focal_px,
+        convention=CONVENTION_TAG,
+        geometry_class=geometry_class,
+    )
+
+    return rig
+
+
+def load_ground_truth(bundle_dir: str) -> SwarmTruth | None:
+    """Load ground truth from bundle directory.
+
+    Returns SwarmTruth if ground_truth.json exists and has_ground_truth
+    is true, otherwise returns None.
+    """
+    from bundle_schema import BundleGroundTruth
+
+    gt_path = os.path.join(bundle_dir, "ground_truth.json")
+    if not os.path.exists(gt_path):
+        return None
+
+    gt = BundleGroundTruth.validate_file(gt_path)
+
+    positions = np.array(gt.positions, dtype=np.float64)
+    drone_ids = np.array(gt.drone_ids, dtype=np.int32)
+
+    return SwarmTruth(positions=positions, drone_ids=drone_ids)
+
+
+def _count_merged_blobs(
+    rgb: np.ndarray,
+    drone_size_m: float,
+    focal_px: float,
+    standoff_m: float,
+) -> int:
+    """Count blobs that exceed the expected maximum size (occlusion merges).
+
+    Replicates the size-filtration logic from detect_blobs to determine
+    how many connected components are larger than 3x the expected apparent
+    size.  These are interpreted as merged occlusion blobs.
+
+    Args:
+        rgb: (H, W, 3) uint8 RGB image.
+        drone_size_m: Physical drone size in metres.
+        focal_px: Camera focal length in pixels.
+        standoff_m: Camera-to-drone standoff in metres.
+
+    Returns:
+        Number of connected components exceeding the max-size threshold.
+    """
+    try:
+        from skimage import measure, filters
+    except ImportError:
+        return 0
+
+    H, W = rgb.shape[:2]
+
+    # Luminance (Rec. 601)
+    luminance = (
+        0.299 * rgb[..., 0].astype(np.float64)
+        + 0.587 * rgb[..., 1].astype(np.float64)
+        + 0.114 * rgb[..., 2].astype(np.float64)
+    ) / 255.0
+
+    try:
+        threshold = filters.threshold_otsu(luminance)
+    except ValueError:
+        threshold = 0.1
+
+    binary = luminance > threshold
+    labeled = measure.label(binary, connectivity=2)
+    regions = measure.regionprops(labeled, intensity_image=luminance)
+
+    expected_apparent = drone_size_m * focal_px / standoff_m
+    max_px = 3.0 * max(expected_apparent, 3.0)
+
+    merged = 0
+    for region in regions:
+        if region.area > max_px:
+            merged += 1
+
+    return merged
+
+
+def _compute_detector_quality(
+    bundle_dir: str,
+    manifest: "BundleManifest",
+    rig: CameraRig,
+    standoff_m: float,
+) -> dict:
+    """Compute detector quality metrics by comparing detections to ID-pass ground truth.
+
+    When object-index EXR files are available alongside the rendered PNG
+    frames, uses read_object_index_exr() to obtain ground-truth centroids
+    per view and computes:
+
+        detector_recall   — fraction of GT drones detected
+        fp_per_frame      — false-positive count per view
+        centroid_error_px — mean centroid localisation error vs GT
+
+    When EXR files are NOT available, returns sentinel values
+    (detector_recall=-1, fp_per_frame=-1, centroid_error_px=-1,
+     merged_detections=0).
+
+    Returns:
+        Dict with keys: detector_recall, fp_per_frame, centroid_error_px,
+        merged_detections.
+    """
+    from detect_blobs import detect_blobs, read_object_index_exr
+
+    views_dir = os.path.join(bundle_dir, "views")
+
+    detector_recall = -1.0
+    fp_per_frame = -1.0
+    centroid_error_px = -1.0
+    merged_detections = 0
+
+    # Check if at least the first view has an EXR file and ground truth exists.
+    first_exr = os.path.join(
+        views_dir, "cam_00", f"frame_{manifest.frame_indices[0]:04d}.exr"
+    )
+    has_exr = os.path.exists(first_exr) and manifest.has_ground_truth
+
+    if not has_exr:
+        return {
+            "detector_recall": detector_recall,
+            "fp_per_frame": fp_per_frame,
+            "centroid_error_px": centroid_error_px,
+            "merged_detections": merged_detections,
+        }
+
+    total_gt = 0
+    total_tp = 0
+    total_fp = 0
+    total_centroid_error = 0.0
+    total_merged = 0
+
+    for v_idx in range(manifest.n_views):
+        cam_dir = os.path.join(views_dir, f"cam_{v_idx:02d}")
+        exr_path = os.path.join(
+            cam_dir, f"frame_{manifest.frame_indices[0]:04d}.exr"
+        )
+        png_path = os.path.join(
+            cam_dir, f"frame_{manifest.frame_indices[0]:04d}.png"
+        )
+
+        if not os.path.exists(exr_path):
+            continue
+
+        # Ground-truth centroids from ID pass EXR.
+        gt_centroids = read_object_index_exr(str(exr_path))
+
+        # Pixel detections from rendered frame.
+        rgb = _read_image(png_path) if os.path.exists(png_path) else None
+
+        if rgb is None or not gt_centroids:
+            total_gt += len(gt_centroids)
+            continue
+
+        dets = detect_blobs(
+            rgb=rgb,
+            drone_size_m=drone_size_m,
+            focal_px=rig.focal_px,
+            standoff_m=standoff_m,
+            image_width_px=manifest.image_size_px[0],
+        )
+        det_points = dets.points_per_view[0] if dets.points_per_view else np.empty(
+            (0, 2), dtype=np.float64
+        )
+
+        # Count merged detections from the image.
+        total_merged += _count_merged_blobs(
+            rgb, drone_size_m, rig.focal_px, standoff_m
+        )
+
+        # Match detections to GT centroids by proximity.
+        gt_matched = set()
+        det_matched = set()
+
+        for g_idx, (gx, gy, _gid) in enumerate(gt_centroids):
+            for d_idx in range(len(det_points)):
+                if d_idx in det_matched:
+                    continue
+                dx, dy = det_points[d_idx]
+                dist = np.sqrt((dx - gx) ** 2 + (dy - gy) ** 2)
+                if dist < DETECTION_MATCH_THRESHOLD_PX:
+                    gt_matched.add(g_idx)
+                    det_matched.add(d_idx)
+                    total_centroid_error += dist
+                    break
+
+        total_gt += len(gt_centroids)
+        total_tp += len(det_matched)
+        total_fp += len(det_points) - len(det_matched)
+
+    detector_recall = total_tp / total_gt if total_gt > 0 else 0.0
+    fp_per_frame = total_fp / manifest.n_views
+    centroid_error_px = (
+        total_centroid_error / total_tp if total_tp > 0 else -1.0
+    )
+    merged_detections = total_merged
+
+    return {
+        "detector_recall": detector_recall,
+        "fp_per_frame": fp_per_frame,
+        "centroid_error_px": centroid_error_px,
+        "merged_detections": merged_detections,
+    }
+
+
+def detect_from_bundle_views(
+    bundle_dir: str,
+    manifest: "BundleManifest",
+    rig: CameraRig,
+    standoff_m: float,
+) -> Detections:
+    """Load rendered frame images and run detect_blobs on each camera view.
+
+    Args:
+        bundle_dir: Root directory of the bundle.
+        manifest: Validated BundleManifest.
+        rig: CameraRig for the bundle (provides focal_px).
+        standoff_m: Standoff distance used for apparent-size filtering.
+
+    Returns:
+        Detections with 2D points from each camera view.
+    """
+    from detect_blobs import detect_blobs
+
+    views_dir = os.path.join(bundle_dir, "views")
+    frame_idx = manifest.frame_indices[0]
+    image_size = tuple(manifest.image_size_px)
+
+    points_per_view: list[np.ndarray] = []
+
+    for v_idx in range(manifest.n_views):
+        cam_dir = os.path.join(views_dir, f"cam_{v_idx:02d}")
+
+        # Try common image extensions.
+        frame_path: str | None = None
+        for ext in [".png", ".jpg", ".jpeg"]:
+            candidate = os.path.join(
+                cam_dir, f"frame_{frame_idx:04d}{ext}"
+            )
+            if os.path.exists(candidate):
+                frame_path = candidate
+                break
+
+        if frame_path is None:
+            points_per_view.append(np.empty((0, 2), dtype=np.float64))
+            continue
+
+        rgb = _read_image(frame_path)
+        if rgb is None:
+            points_per_view.append(np.empty((0, 2), dtype=np.float64))
+            continue
+
+        dets = detect_blobs(
+            rgb=rgb,
+            drone_size_m=DRONE_SIZE_M,
+            focal_px=rig.focal_px,
+            standoff_m=standoff_m,
+            image_width_px=image_size[0],
+        )
+
+        if dets.points_per_view:
+            points_per_view.append(dets.points_per_view[0])
+        else:
+            points_per_view.append(np.empty((0, 2), dtype=np.float64))
+
+    return Detections(points_per_view=points_per_view, image_size=image_size)
+
+
+def process_bundle(bundle_dir: str) -> dict:
+    """Process a single bundle directory end-to-end.
+
+    Pipeline steps:
+      1. Load manifest, poses, ground truth from bundle JSON files.
+      2. Build CameraRig from poses.
+      3. Compute standoff distance from camera poses.
+      4. Run pixel detection on each camera view.
+      5. Solve multi-view correspondence.
+      6. DLT triangulation.
+      7. Score against ground-truth.
+      8. Compute detector quality metrics (if EXRs available).
+
+    Args:
+        bundle_dir: Path to the bundle root directory.
+
+    Returns:
+        Dict with all output columns (ready for CSV row).
+    """
+    # Lazy import to ensure bundle_schema is on sys.path.
+    from bundle_schema import BundleManifest, BundlePoses, BundleGroundTruth
+
+    # 1. Load metadata.
+    manifest_path = os.path.join(bundle_dir, "manifest.json")
+    poses_path = os.path.join(bundle_dir, "poses.json")
+
+    manifest = BundleManifest.validate_file(manifest_path)
+    poses = BundlePoses.validate_file(poses_path)
+
+    # 2. Build CameraRig.
+    rig = bundle_poses_to_rig(poses, manifest)
+
+    # 3. Load ground truth.
+    truth = load_ground_truth(bundle_dir)
+
+    # 4. Compute standoff.
+    standoff_m = _compute_standoff_from_poses(rig)
+    # Attempt to get standoff from manifest metadata.
+    if manifest.generated_by and "standoff_m" in manifest.generated_by:
+        standoff_m = float(manifest.generated_by["standoff_m"])
+
+    # 5. Coverage.
+    coverage_pct = 100.0
+    if truth is not None:
+        coverage_pct = compute_framing_coverage(truth, rig) * 100.0
+
+    # 6. Detection on bundle views.
+    detections = detect_from_bundle_views(bundle_dir, manifest, rig, standoff_m)
+
+    # 7. Correspondence.
+    tracks = solve_correspondence(
+        detections=detections,
+        rig=rig,
+        epipolar_threshold=EPIPOLAR_THRESHOLD_PX,
+    )
+
+    # 8. Triangulation.
+    recon = triangulate_dlt(tracks, rig, detections)
+
+    # 9. Scoring.
+    score = score_full(
+        tracks,
+        recon,
+        truth,
+        rig,
+        position_threshold_m=MATCH_THRESHOLD_M,
+    )
+
+    # 10. Detector quality.
+    det_quality = _compute_detector_quality(
+        bundle_dir, manifest, rig, standoff_m
+    )
+
+    # Determine noise_std and min_spacing from generated_by if available.
+    noise_std = -1.0
+    min_spacing = 0.0
+    if manifest.generated_by:
+        if "pixel_noise_std" in manifest.generated_by:
+            noise_std = float(manifest.generated_by["pixel_noise_std"])
+        if "min_spacing_m" in manifest.generated_by:
+            min_spacing = float(manifest.generated_by["min_spacing_m"])
+
+    geometry_class = rig.geometry_class
+
+    row = {
+        "n_views": manifest.n_views,
+        "geometry_class": geometry_class,
+        "noise_std": noise_std,
+        "n_drones": len(truth.drone_ids) if truth is not None else 0,
+        "focal_px": manifest.focal_px,
+        "standoff_m": round(standoff_m, 1),
+        "coverage_pct": round(coverage_pct, 1),
+        "n_matched": score.correspondence.n_matched,
+        "recall": round(score.correspondence.recall, 4),
+        "ghost_count": score.correspondence.n_ghost,
+        "precision": round(score.correspondence.precision, 4),
+        "f1": round(score.correspondence.f1, 4),
+        "median_err_m": round(score.triangulation.median_error_m, 4),
+        "p95_err_m": round(score.triangulation.p95_error_m, 4),
+        "frame_idx": 0,
+        "match_threshold_m": MATCH_THRESHOLD_M,
+        "min_spacing": min_spacing,
+        "epipolar_threshold_px": EPIPOLAR_THRESHOLD_PX,
+        "detector_recall": round(det_quality["detector_recall"], 4),
+        "fp_per_frame": round(det_quality["fp_per_frame"], 4),
+        "centroid_error_px": round(det_quality["centroid_error_px"], 4),
+        "merged_detections": det_quality["merged_detections"],
+    }
+
+    return row
+
+
+def _create_synthetic_bundle(tmp_dir: str) -> str:
+    """Create a minimal synthetic bundle directory for testing the headless
+    pipeline.
+
+    Generates a small swarm and camera rig via B1, projects drone positions
+    into camera views, paints synthetic white-on-black dot images, and
+    writes all bundle JSON files.
+
+    Args:
+        tmp_dir: Directory to create the bundle in.
+
+    Returns:
+        Path to the created bundle directory.
+    """
+    import json
+
+    from bundle_schema import bundle_minimal
+
+    # Use the minimal fixture as a starting template.
+    m_dict, p_dict, gt_dict = bundle_minimal()
+
+    # --- Generate a slightly more interesting test scenario. ---
+    n_drones = 3
+    n_views = 3
+
+    truth = generate_swarm_truth(
+        n_drones=n_drones,
+        n_frames=1,
+        area_km=0.5,
+        height_range_m=200.0,
+        seed=42,
+        min_spacing_m=MIN_SPACING_M,
+    )
+    rig = generate_camera_rig(
+        truth=truth,
+        n_views=n_views,
+        geometry_class="mixed",
+        standoff_m=500.0,
+        seed=123,
+    )
+
+    # Build manifest dict.
+    m_dict["scene_id"] = "test-synthetic"
+    m_dict["n_views"] = n_views
+    m_dict["n_frames"] = 1
+    m_dict["frame_indices"] = [0]
+    m_dict["image_size_px"] = list(IMAGE_SIZE)
+    m_dict["focal_px"] = DEFAULT_FOCAL_PX
+    m_dict["has_ground_truth"] = True
+    m_dict["coverage_pct"] = 100.0
+    m_dict["generated_by"] = {
+        "standoff_m": 500.0,
+        "pixel_noise_std": 0.0,
+        "geometry_class": "mixed",
+        "min_spacing_m": MIN_SPACING_M,
+    }
+
+    # Build poses dict from CameraRig.
+    p_dict["views"] = []
+    for v in range(rig.n_views):
+        K = rig.K[v].tolist()
+        c2w = rig.c2w[v].tolist()
+        w2c_R = rig.w2c_R[v].tolist()
+        w2c_t = rig.w2c_t[v].tolist()
+        p_dict["views"].append(
+            {
+                "view_idx": v,
+                "K": K,
+                "c2w": c2w,
+                "w2c_R": w2c_R,
+                "w2c_t": w2c_t,
+            }
+        )
+
+    # Build ground truth dict.
+    gt_dict["drone_ids"] = truth.drone_ids.tolist()
+    gt_dict["positions"] = truth.positions.tolist()
+
+    # Write JSON files.
+    bundle_path = os.path.join(tmp_dir, "synthetic_bundle")
+    os.makedirs(bundle_path, exist_ok=True)
+
+    with open(os.path.join(bundle_path, "manifest.json"), "w") as f:
+        json.dump(m_dict, f, indent=2)
+    with open(os.path.join(bundle_path, "poses.json"), "w") as f:
+        json.dump(p_dict, f, indent=2)
+    with open(os.path.join(bundle_path, "ground_truth.json"), "w") as f:
+        json.dump(gt_dict, f, indent=2)
+
+    # Create view directories and synthetic images.
+    views_dir = os.path.join(bundle_path, "views")
+    W, H = IMAGE_SIZE
+
+    for v in range(n_views):
+        cam_dir = os.path.join(views_dir, f"cam_{v:02d}")
+        os.makedirs(cam_dir, exist_ok=True)
+
+        # Project ground-truth drone positions into this camera view.
+        K = rig.K[v]
+        R = rig.w2c_R[v]
+        t = rig.w2c_t[v]
+
+        img = np.zeros((H, W, 3), dtype=np.uint8)
+
+        for d in range(n_drones):
+            world_pt = truth.positions[0, d]
+            cam_pt = R @ world_pt + t
+            if cam_pt[2] <= 0:
+                continue
+            proj = K @ cam_pt
+            u = int(round(proj[0] / proj[2]))
+            v_u = int(round(proj[1] / proj[2]))
+
+            if 0 <= u < W and 0 <= v_u < H:
+                # Draw a small white dot (3-pixel radius).
+                for dx in range(-3, 4):
+                    for dy in range(-3, 4):
+                        if dx * dx + dy * dy <= 9:
+                            ix, iy = u + dx, v_u + dy
+                            if 0 <= ix < W and 0 <= iy < H:
+                                img[iy, ix] = [255, 255, 255]
+
+        # Write PNG via PIL if available, else matplotlib.
+        png_path = os.path.join(cam_dir, "frame_0000.png")
+        try:
+            from PIL import Image as PILImage
+
+            PILImage.fromarray(img).save(png_path)
+        except ImportError:
+            try:
+                import matplotlib.pyplot as plt
+
+                plt.imsave(png_path, img)
+            except ImportError:
+                pass  # Image won't be readable, but the test can still
+                # verify the JSON-reading path.
+
+    return bundle_path
+
+
+def _run_headless(args: argparse.Namespace) -> None:
+    """Run the headless pipeline on a bundle directory.
+
+    Two modes (mutually exclusive):
+      1. ``--bundle-dir <path>`` — process an existing bundle.
+      2. ``--test-synthetic`` — create a synthetic bundle and process it.
+
+    Writes a single-row CSV and prints a formatted summary to stdout.
+    """
+    output_path = args.output
+
+    if args.test_synthetic:
+        import tempfile
+
+        print("\n--- Creating synthetic test bundle ---")
+        with tempfile.TemporaryDirectory(prefix="sweep_b_test_") as tmp:
+            bundle_dir = _create_synthetic_bundle(tmp)
+            print(f"  Bundle created at: {bundle_dir}")
+            row = process_bundle(bundle_dir)
+            n_views = row["n_views"]
+            n_drones = row["n_drones"]
+            recall = row["recall"]
+            median_err = row["median_err_m"]
+            print(
+                f"  Synthetic bundle done: {n_views} views, {n_drones} drones, "
+                f"recall={recall:.2f}, median_error={median_err:.2f}m"
+            )
+            # Write CSV inside temp dir so we don't leave artifacts.
+            output_path = os.path.join(tmp, "sweep_b_result.csv")
+            _write_headless_csv([row], output_path)
+            print(f"  CSV written to: {output_path}")
+        return
+
+    bundle_dir = args.bundle_dir
+    if not bundle_dir:
+        print("ERROR: --bundle-dir is required for headless mode (or use --test-synthetic)")
+        sys.exit(1)
+
+    if not os.path.isdir(bundle_dir):
+        print(f"ERROR: Bundle directory not found: {bundle_dir}")
+        sys.exit(1)
+
+    print(f"\n--- Processing bundle: {bundle_dir} ---")
+    row = process_bundle(bundle_dir)
+    print(
+        f"  Views: {row['n_views']}, Drones: {row['n_drones']}, "
+        f"Recall: {row['recall']:.3f}, Median error: {row['median_err_m']:.3f}m, "
+        f"F1: {row['f1']:.3f}, Coverage: {row['coverage_pct']:.1f}%"
+    )
+    if row.get("detector_recall", -1) >= 0:
+        print(
+            f"  Detector recall: {row['detector_recall']:.3f}, "
+            f"FP/frame: {row['fp_per_frame']:.2f}, "
+            f"Centroid error: {row['centroid_error_px']:.3f}px"
+        )
+
+    # Write CSV.
+    output_dir = os.path.dirname(output_path) or "."
+    os.makedirs(output_dir, exist_ok=True)
+    _write_headless_csv([row], output_path)
+    print(f"  Results written to: {output_path}")
+
+
+def _write_headless_csv(rows: list[dict], path: str) -> None:
+    """Write a single-row (or multi-row) CSV using HEADLESS_CSV_COLUMNS."""
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=HEADLESS_CSV_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+# ============================================================================
 # CLI
 # ============================================================================
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="B-Sweep: analytic sweep for Stage 1 geometry pipeline"
+        description="B-Sweep: sweep harness for Stage 1 geometry pipeline"
     )
     parser.add_argument(
         "--mode",
-        choices=["analytic"],
+        choices=["analytic", "headless"],
         default="analytic",
-        help="Sweep mode (only analytic for now)",
+        help="Sweep mode: analytic (synthetic noise sweep) or headless (bundle processing)",
     )
+    # Analytic mode arguments
     parser.add_argument(
         "--trials",
         type=int,
@@ -510,7 +1261,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output_dir",
         type=str,
         default="logs/sweep_b",
-        help="Output directory (default logs/sweep_b)",
+        help="Output directory for analytic mode (default logs/sweep_b)",
+    )
+    # Headless mode arguments
+    parser.add_argument(
+        "--bundle-dir",
+        type=str,
+        default=None,
+        help="Bundle directory for headless mode",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="logs/sweep_b_results.csv",
+        help="Output CSV path for headless mode (default logs/sweep_b_results.csv)",
+    )
+    parser.add_argument(
+        "--test-synthetic",
+        action="store_true",
+        help="Create and process a synthetic test bundle (headless mode)",
     )
     return parser.parse_args(argv)
 
@@ -518,6 +1287,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
 
+    # ---- Headless mode ----
+    if args.mode == "headless":
+        _run_headless(args)
+        return
+
+    # ---- Analytic mode ----
     # Create output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
