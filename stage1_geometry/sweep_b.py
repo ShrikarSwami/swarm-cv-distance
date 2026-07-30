@@ -73,7 +73,7 @@ CSV_COLUMNS = [
     "ghost_count",
     "precision",
     "f1",
-    "median_err_mean",
+    "median_err_m",
     "median_err_std",
     "p95_err_m",
     "frame_idx",
@@ -246,7 +246,7 @@ def run_scale(
                     "ghost_count": round(float(np.mean(trial_buckets["ghost_count"])), 2),
                     "precision": round(float(np.mean(trial_buckets["precision"])), 4),
                     "f1": round(float(np.mean(trial_buckets["f1"])), 4),
-                    "median_err_mean": round(float(np.nanmean(median_errs)), 4),
+                    "median_err_m": round(float(np.nanmean(median_errs)), 4),
                     "median_err_std": round(float(np.nanstd(median_errs)), 4),
                     "p95_err_m": round(float(np.nanmean(trial_buckets["p95_err_m"])), 4),
                     "frame_idx": 0,
@@ -260,7 +260,7 @@ def run_scale(
                 print(
                     f"  n_views={n_views:>2}  {geom:<12}  noise={noise_std:>3.0f}px  "
                     f"matched={row['n_matched']:>5.1f}  recall={row['recall']:.3f}  "
-                    f"median={row['median_err_mean']:>7.2f}m  "
+                    f"median={row['median_err_m']:>7.2f}m  "
                     f"f1={row['f1']:.3f}  coverage={coverage_pct:>5.1f}%{coverage_flag}"
                 )
 
@@ -310,7 +310,7 @@ def _plot_subplot(ax, rows, scale_name: str) -> None:
             ]
             subset.sort(key=lambda r: r["n_views"])
             xs = [r["n_views"] for r in subset]
-            ys = [r["median_err_mean"] for r in subset]
+            ys = [r["median_err_m"] for r in subset]
             yerr = [r["median_err_std"] for r in subset]
 
             ax.errorbar(
@@ -398,7 +398,7 @@ def generate_report(full_rows: list, matched_rows: list, output_dir: str) -> Non
                 f.write(
                     f"| {r['n_views']:>2} | {r['geometry_class']:<12} | {r['noise_std']:>4.0f} | "
                     f"{r['n_matched']:>5.1f} | {r['recall']:.3f} | {r['ghost_count']:>4.1f} | "
-                    f"{r['f1']:.3f} | {r['median_err_mean']:>6.2f} &plusmn; {r['median_err_std']:.2f} | "
+                    f"{r['f1']:.3f} | {r['median_err_m']:>6.2f} &plusmn; {r['median_err_std']:.2f} | "
                     f"{r['p95_err_m']:>6.2f} | {r['coverage_pct']:>5.1f} |\n"
                 )
             f.write("\n")
@@ -414,8 +414,8 @@ def generate_report(full_rows: list, matched_rows: list, output_dir: str) -> Non
             n4_rows = [r for r in rows if r["n_views"] == 4]
             n12_rows = [r for r in rows if r["n_views"] == 12]
             if n4_rows and n12_rows:
-                avg_4 = float(np.nanmean([r["median_err_mean"] for r in n4_rows]))
-                avg_12 = float(np.nanmean([r["median_err_mean"] for r in n12_rows]))
+                avg_4 = float(np.nanmean([r["median_err_m"] for r in n4_rows]))
+                avg_12 = float(np.nanmean([r["median_err_m"] for r in n12_rows]))
                 ratio = avg_4 / avg_12 if avg_12 > 0 else float("inf")
                 f.write(f"- **{label}:** Error decreases with camera count. "
                         f"Mean error at 4 cameras: {avg_4:.2f}m vs 12 cameras: {avg_12:.2f}m "
@@ -428,9 +428,9 @@ def generate_report(full_rows: list, matched_rows: list, output_dir: str) -> Non
             mx = [r for r in low_n if r["geometry_class"] == "mixed"]
             sr = [r for r in low_n if r["geometry_class"] == "surround"]
             if ag and mx:
-                ag_err = float(np.nanmean([r["median_err_mean"] for r in ag]))
-                mx_err = float(np.nanmean([r["median_err_mean"] for r in mx]))
-                sr_err = float(np.nanmean([r["median_err_mean"] for r in sr])) if sr else float("nan")
+                ag_err = float(np.nanmean([r["median_err_m"] for r in ag]))
+                mx_err = float(np.nanmean([r["median_err_m"] for r in mx]))
+                sr_err = float(np.nanmean([r["median_err_m"] for r in sr])) if sr else float("nan")
                 f.write(f"- **{label}:** At low camera counts (n_views ≤ 4), "
                         f"all_ground error = {ag_err:.2f}m, "
                         f"mixed = {mx_err:.2f}m"
@@ -442,8 +442,8 @@ def generate_report(full_rows: list, matched_rows: list, output_dir: str) -> Non
             n8 = [r for r in rows if r["n_views"] == 8]
             n12 = [r for r in rows if r["n_views"] == 12]
             if n8 and n12:
-                avg_8 = float(np.nanmean([r["median_err_mean"] for r in n8]))
-                avg_12 = float(np.nanmean([r["median_err_mean"] for r in n12]))
+                avg_8 = float(np.nanmean([r["median_err_m"] for r in n8]))
+                avg_12 = float(np.nanmean([r["median_err_m"] for r in n12]))
                 improvement = (avg_8 - avg_12) / avg_8 * 100 if avg_8 > 0 else 0
                 f.write(f"- **{label}:** Diminishing returns above 8 views — "
                         f"error at 8 views = {avg_8:.2f}m vs 12 = {avg_12:.2f}m "
@@ -464,7 +464,7 @@ def generate_report(full_rows: list, matched_rows: list, output_dir: str) -> Non
         for label, rows in [("Full scale", full_rows), ("Matched scale", matched_rows)]:
             zero_noise = [r for r in rows if r["noise_std"] == 0.0 and r["recall"] > 0.8]
             if zero_noise:
-                errs = [r["median_err_mean"] for r in zero_noise]
+                errs = [r["median_err_m"] for r in zero_noise]
                 f.write(f"- **{label}:** Zero-noise baseline recall > 0.8 for "
                         f"{len(zero_noise)} config(s); "
                         f"median error range = {min(errs):.4f}–{max(errs):.4f}m.\n")

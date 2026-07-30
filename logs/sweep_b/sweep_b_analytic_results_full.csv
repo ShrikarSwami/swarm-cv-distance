@@ -1,4 +1,4 @@
-n_views,geometry_class,noise_std,n_drones,focal_px,standoff_m,coverage_pct,n_matched,recall,ghost_count,precision,f1,median_err_mean,median_err_std,p95_err_m,frame_idx,match_threshold_m,min_spacing,epipolar_threshold_px
+n_views,geometry_class,noise_std,n_drones,focal_px,standoff_m,coverage_pct,n_matched,recall,ghost_count,precision,f1,median_err_m,median_err_std,p95_err_m,frame_idx,match_threshold_m,min_spacing,epipolar_threshold_px
 2,all_ground,0.0,5,2666.6666666666665,2000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,1.5,3.0,3.0
 2,all_ground,1.0,5,2666.6666666666665,2000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,1.5,3.0,3.0
 2,all_ground,3.0,5,2666.6666666666665,2000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,1.5,3.0,3.0

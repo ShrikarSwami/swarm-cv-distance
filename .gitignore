@@ -1,10 +1,11 @@
 venv/
 __pycache__/
 *.pyc
-logs/
+logs/*
+!logs/sweep_b/
 .DS_Store
 
-# Regeneratable render/detection outputs -- same reasoning as logs/
+# Regeneratable render/detection outputs -- same reasoning as logs/*
 stage2_render/output/
 stage2_detect/output/
 dataset/
