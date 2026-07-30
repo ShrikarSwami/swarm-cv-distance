@@ -453,7 +453,7 @@ def _plot_subplot(ax, rows, scale_name: str) -> None:
 
 
 def generate_plot(full_rows: list, matched_rows: list, output_dir: str) -> None:
-    """Generate a two-panel plot: full scale left, matched scale right."""
+    """Generate plot: full scale left (if available), matched scale right."""
     try:
         import matplotlib
 
@@ -463,9 +463,15 @@ def generate_plot(full_rows: list, matched_rows: list, output_dir: str) -> None:
         print("WARNING: matplotlib not available; skipping plot")
         return
 
-    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(16, 6))
-    _plot_subplot(ax_left, full_rows, "full")
-    _plot_subplot(ax_right, matched_rows, "matched")
+    if full_rows:
+        fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(16, 6))
+        _plot_subplot(ax_left, full_rows, "full")
+        _plot_subplot(ax_right, matched_rows, "matched")
+    else:
+        # Matched scale only (full-scale dropped)
+        fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+        _plot_subplot(ax, matched_rows, "matched")
+        ax.set_title("Error vs Camera Count — Matched scale (0.3km)")
 
     plt.tight_layout()
     path = os.path.join(output_dir, "sweep_b_error_vs_views.png")
@@ -491,10 +497,21 @@ def generate_report(full_rows: list, matched_rows: list, output_dir: str) -> Non
     with open(report_path, "w") as f:
         f.write("# B-Sweep Analytic Report\n\n")
         f.write(f"## Overview\n\n")
-        f.write(
-            f"- **Configs per scale:** {len(full_rows)} "
-            f"({6} n_views x {3} geometry_class x {3} noise_std_px)\n"
-        )
+        if full_rows:
+            f.write(
+                f"- **Configs per scale:** {len(full_rows)} "
+                f"({6} n_views x {3} geometry_class x {3} noise_std_px)\n"
+            )
+        else:
+            f.write(
+                f"- **Configs (matched only):** {len(matched_rows)} "
+                f"({6} n_views x {3} geometry_class x {3} noise_std_px)\n"
+            )
+            f.write(
+                f"- **Full-scale sweep (5.0km) dropped:** Required standoff 6846m exceeds "
+                f"practical camera range. At fixed {STANDOFF_M}m standoff, coverage is <95% "
+                f"for ALL configs. The swarm is too spread out for the camera FOV.\n"
+            )
         f.write(f"- **Trials per config:** 20\n")
         f.write(f"- **Drones:** {N_DRONES}\n")
         f.write(f"- **Standoff:** {STANDOFF_M} m\n")
@@ -1385,16 +1402,23 @@ def main(argv: list[str] | None = None) -> None:
         * len(SWEEP_AXES["geometry_class"])
         * len(SWEEP_AXES["noise_std_px"])
     )
-    total_runs = n_configs * args.trials * 2  # both scales
+
+    # Full-scale sweep (5.0km) is DROPPED because:
+    # - Required standoff = 6846m (compute_required_standoff)
+    # - Even at 7000m standoff, coverage is only 96.7%
+    # - At fixed 2000m standoff, coverage is <95% for ALL configs
+    # - The swarm is too spread out for the camera FOV at practical distances
+    # Matched-scale sweep (0.3km) runs with full 100% coverage.
     print(
-        f"B-Sweep: {args.trials} trials x {n_configs} configs x 2 scales "
-        f"= {total_runs} total runs"
+        f"B-Sweep: {args.trials} trials x {n_configs} configs x 1 scale (matched only) "
+        f"= {n_configs * args.trials} total runs"
     )
+    print(f"  NOTE: Full-scale sweep (5.0km) dropped — required standoff 6846m exceeds")
+    print(f"         practical camera range. Matched scale (0.3km) only.")
     print(f"Output directory: {output_dir.resolve()}")
 
-    # Scale definitions
+    # Only run matched scale (full scale dropped due to coverage limitations)
     scales = [
-        ("full", args.area_km_full, 1000.0),
         ("matched", args.area_km_matched, 100.0),
     ]
 
@@ -1409,13 +1433,13 @@ def main(argv: list[str] | None = None) -> None:
         )
         all_results[scale_name] = rows
 
-    # Plot (needs both scales' data)
+    # Plot (matched scale only)
     print("\n--- Generating plot ---")
-    generate_plot(all_results["full"], all_results["matched"], str(output_dir))
+    generate_plot([], all_results["matched"], str(output_dir))
 
     # Report
     print("\n--- Generating report ---")
-    generate_report(all_results["full"], all_results["matched"], str(output_dir))
+    generate_report([], all_results["matched"], str(output_dir))
 
     print("\nDone.")
 
