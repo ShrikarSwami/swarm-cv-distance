@@ -20,7 +20,7 @@ app are yet to be built.
 | B3 Correspondence | Closed | `e03ad35` |
 | B4 Scoring | Closed | `e03ad35` |
 | B5 Triangulation | Closed | `e03ad35` |
-| 7. Analytic sweep | Closed | pending commit |
+| 7. Analytic sweep | Closed | `de6e21c` |
 | 2. Bundle format + schema | Open | |
 | 3. Blender addon export + framing guard | Open | |
 | 4. Pixel detector | Open | |
@@ -96,4 +96,4 @@ prior.
 | Date | Attempt | What landed | What failed |
 |------|---------|-------------|-------------|
 | 2026-07-30 | Session 1 — orchestrated build | PROGRESS.md created, orchestrator started | |
-| 2026-07-30 | Session 2 — analytic sweep | B-Sweep analytic sweep complete: sweep_b.py (1080 runs/scale x 2 scales), CSV, plot, report in logs/sweep_b/ | |
+| 2026-07-30 | Session 2 — analytic sweep | B-Sweep analytic sweep complete: `de6e21c` — sweep_b.py, CSV, plot, report in logs/sweep_b/ | |
