@@ -24,8 +24,8 @@ app are yet to be built.
 | 2. Bundle format + schema | Closed | `be4ed7b` |
 | 3. Blender addon export + framing guard | Closed | `f8e1a00` |
 | 4. Pixel detector | Closed | `52a6322` |
-| 6. Headless harness | Closed | `HEADLESS_COMMIT` |
-| 5. Reconstruction app | Open | |
+| 6. Headless harness | Closed | `c1e6031` |
+| 5. Reconstruction app | Closed | `954430a` |
 | 8. Cross-validation | Open | |
 
 ---
@@ -106,4 +106,5 @@ prior.
 | 2026-07-30 | Session 3 — bundle schema | `bundle_schema.py` with Pydantic v2 models (BundleManifest, BundlePoses, BundleGroundTruth, CameraView) + `bundle_minimal()` fixture + `validate_file()` methods. Commit `be4ed7b`. | |
 | 2026-07-30 | Session 4 — export + framing guard | `SWARM_OT_export_bundle` operator in addon + `export_bundle_cli.py`. Framing check at 100% threshold with exact spec error message. RGB + ID EXR rendering per view. Bundle JSON files via `bundle_schema`. Commit `f8e1a00`. |
 | 2026-07-30 | Session 5 — pixel detector | `detect_blobs.py` with luminance threshold, OTSU, connected components, centroid extraction, size filtration. Unit tests restored from skip to pass (39/39). Edge cases covered. Commit `52a6322`. | |
-| 2026-07-30 | Session 6 — headless harness | `sweep_b.py` extended with `--mode=headless`, `--bundle-dir`, `--output`, `--test-synthetic`. New functions: `bundle_poses_to_rig`, `load_ground_truth`, `detect_from_bundle_views`, `_compute_detector_quality`, `process_bundle`, `_run_headless`, `_create_synthetic_bundle`. Full pipeline (detection -> correspondence -> triangulation -> evaluation) runs on bundle directories. Synthetic bundle test passes. Commit `HEADLESS_COMMIT`. | |
+| 2026-07-30 | Session 6 — headless harness | `sweep_b.py` extended with `--mode=headless`, `--bundle-dir`, `--output`, `--test-synthetic`. New functions: `bundle_poses_to_rig`, `load_ground_truth`, `detect_from_bundle_views`, `_compute_detector_quality`, `process_bundle`, `_run_headless`, `_create_synthetic_bundle`. Full pipeline (detection -> correspondence -> triangulation -> evaluation) runs on bundle directories. Synthetic bundle test passes. Commit `c1e6031`. | |
+| 2026-07-30 | Session 7 — reconstruction app | `reconstruction_app.py` created: FastAPI backend (status/upload/run/export endpoints) with inline Three.js frontend. Pipeline: detection -> correspondence -> triangulation -> grading. 3D viz: truth/reconstructed/ghost/missed drones, error vectors, camera frustums. Sidebar: bundle info, view selector, param sliders, grade panel, timeline scrubber. All 39/39 prediction tests pass. Commit `954430a`. | |
