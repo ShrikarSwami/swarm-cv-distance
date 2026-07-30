@@ -21,7 +21,7 @@ app are yet to be built.
 | B4 Scoring | Closed | `e03ad35` |
 | B5 Triangulation | Closed | `e03ad35` |
 | 7. Analytic sweep | Closed | `01162d4` |
-| 2. Bundle format + schema | Open | |
+| 2. Bundle format + schema | Closed | `be4ed7b` |
 | 3. Blender addon export + framing guard | Open | |
 | 4. Pixel detector | Open | |
 | 6. Headless harness | Open | |
@@ -98,3 +98,4 @@ prior.
 | 2026-07-30 | Session 1 — orchestrated build | PROGRESS.md created, orchestrator started | |
 | 2026-07-30 | Session 2 — analytic sweep | B-Sweep analytic sweep complete: `de6e21c` — sweep_b.py, CSV, plot, report in logs/sweep_b/ | |
 | 2026-07-30 | Session 2b — column fix | median_err_mean → median_err_m, .gitignore fix: `01162d4` | |
+| 2026-07-30 | Session 3 — bundle schema | `bundle_schema.py` with Pydantic v2 models (BundleManifest, BundlePoses, BundleGroundTruth, CameraView) + `bundle_minimal()` fixture + `validate_file()` methods. Commit `be4ed7b`. | |
