@@ -20,7 +20,7 @@ app are yet to be built.
 | B3 Correspondence | Closed | `e03ad35` |
 | B4 Scoring | Closed | `e03ad35` |
 | B5 Triangulation | Closed | `e03ad35` |
-| 7. Analytic sweep | Closed | `de6e21c` |
+| 7. Analytic sweep | Closed | `01162d4` |
 | 2. Bundle format + schema | Open | |
 | 3. Blender addon export + framing guard | Open | |
 | 4. Pixel detector | Open | |
@@ -52,7 +52,7 @@ app are yet to be built.
 
 | Experiment | Predicted | Observed | Ratio | Match? |
 |------------|-----------|----------|-------|--------|
-| Ghost behavior vs camera count | Ghost count is zero or near-zero at 2–3 views (Hungarian one-to-one matching forces bijection with no room for spurious tracks), rises at 4+ views as combinatorics create overlapping tracks, then falls as views increase further. Consequence: if ghosts cannot arise at low camera counts, wrong pairings surface as position error instead, and the camera-count curve tells a different story than one that includes ghost-driven qualitative regimes. | | | |
+| Ghost behavior vs camera count | Ghost count is zero or near-zero at 2–3 views (Hungarian one-to-one matching forces bijection with no room for spurious tracks), rises at 4+ views as combinatorics create overlapping tracks, then falls as views increase further. Consequence: if ghosts cannot arise at low camera counts, wrong pairings surface as position error instead, and the camera-count curve tells a different story than one that includes ghost-driven qualitative regimes. | Zero noise: ghosts=0 at all configs. 1px noise: ghosts peak at 2 views (all_ground 2.85), decrease rapidly to zero at 6+ views. 3px noise: ghosts peak at 4 views (4.8), then decrease gradually. Wrong pairings at 2 views surface as ghosts AND position error simultaneously — DLT from 2 noisy rays can place the triangulated point far enough from truth to exceed match_threshold. | | Partial: zero-noise behavior confirmed (ghosts=0 everywhere). Low-noise regime reverses the predicted shape — ghosts peak at 2 views, not at 4+. The one-to-one Hungarian constraint prevents spurious TRACKS but not spurious 3D positions from 2-view triangulation. |
 | Spec Section 7: error vs views | Error decreases monotonically with camera count, with diminishing returns above 8 views. Mixed geometry outperforms all_ground at low camera counts due to elevation diversity. | Matched scale 1px noise: 0.96m (2v) -> 0.45m (12v) monotonically; 2.6% improvement 8v->12v. Surround recall 0.83 > all_ground 0.38 at 2v. | 2.1x (error), 2.2x (recall) | Validated |
 
 ---
@@ -97,3 +97,4 @@ prior.
 |------|---------|-------------|-------------|
 | 2026-07-30 | Session 1 — orchestrated build | PROGRESS.md created, orchestrator started | |
 | 2026-07-30 | Session 2 — analytic sweep | B-Sweep analytic sweep complete: `de6e21c` — sweep_b.py, CSV, plot, report in logs/sweep_b/ | |
+| 2026-07-30 | Session 2b — column fix | median_err_mean → median_err_m, .gitignore fix: `01162d4` | |
