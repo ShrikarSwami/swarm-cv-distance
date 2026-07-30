@@ -22,7 +22,7 @@ app are yet to be built.
 | B5 Triangulation | Closed | `e03ad35` |
 | 7. Analytic sweep | Closed | `01162d4` |
 | 2. Bundle format + schema | Closed | `be4ed7b` |
-| 3. Blender addon export + framing guard | Open | |
+| 3. Blender addon export + framing guard | Closed | `f8e1a00` |
 | 4. Pixel detector | Open | |
 | 6. Headless harness | Open | |
 | 5. Reconstruction app | Open | |
@@ -99,3 +99,4 @@ prior.
 | 2026-07-30 | Session 2 — analytic sweep | B-Sweep analytic sweep complete: `de6e21c` — sweep_b.py, CSV, plot, report in logs/sweep_b/ | |
 | 2026-07-30 | Session 2b — column fix | median_err_mean → median_err_m, .gitignore fix: `01162d4` | |
 | 2026-07-30 | Session 3 — bundle schema | `bundle_schema.py` with Pydantic v2 models (BundleManifest, BundlePoses, BundleGroundTruth, CameraView) + `bundle_minimal()` fixture + `validate_file()` methods. Commit `be4ed7b`. | |
+| 2026-07-30 | Session 4 — export + framing guard | `SWARM_OT_export_bundle` operator in addon + `export_bundle_cli.py`. Framing check at 100% threshold with exact spec error message. RGB + ID EXR rendering per view. Bundle JSON files via `bundle_schema`. Commit `f8e1a00`. | |
