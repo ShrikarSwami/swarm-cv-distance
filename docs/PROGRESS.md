@@ -23,7 +23,7 @@ app are yet to be built.
 | 7. Analytic sweep | Closed | `01162d4` |
 | 2. Bundle format + schema | Closed | `be4ed7b` |
 | 3. Blender addon export + framing guard | Closed | `f8e1a00` |
-| 4. Pixel detector | Open | |
+| 4. Pixel detector | Closed | `52a6322` |
 | 6. Headless harness | Open | |
 | 5. Reconstruction app | Open | |
 | 8. Cross-validation | Open | |
@@ -45,6 +45,11 @@ app are yet to be built.
   - Prediction partially validated: surround geometry outperforms all_ground at 2
     views for 1px noise (recall 0.83 vs 0.38), confirming elevation diversity benefit.
   - 108 rows per CSV, 19 columns (median_err_m reported as mean + std across 20 trials).
+- **4. Pixel detector (2026-07-30):**
+  - `apparent_px` formula validated: `0.5 * 2666.67 / 1000 = 1.333` — symmetry confirmed
+    (doubling standoff halves apparent size, doubling focal doubles it).
+  - Detection pipeline passes: 39/39 prediction tests (3 TestPixelDetector tests
+    previously skipped now all PASS).
 
 ---
 
@@ -99,4 +104,5 @@ prior.
 | 2026-07-30 | Session 2 — analytic sweep | B-Sweep analytic sweep complete: `de6e21c` — sweep_b.py, CSV, plot, report in logs/sweep_b/ | |
 | 2026-07-30 | Session 2b — column fix | median_err_mean → median_err_m, .gitignore fix: `01162d4` | |
 | 2026-07-30 | Session 3 — bundle schema | `bundle_schema.py` with Pydantic v2 models (BundleManifest, BundlePoses, BundleGroundTruth, CameraView) + `bundle_minimal()` fixture + `validate_file()` methods. Commit `be4ed7b`. | |
-| 2026-07-30 | Session 4 — export + framing guard | `SWARM_OT_export_bundle` operator in addon + `export_bundle_cli.py`. Framing check at 100% threshold with exact spec error message. RGB + ID EXR rendering per view. Bundle JSON files via `bundle_schema`. Commit `f8e1a00`. | |
+| 2026-07-30 | Session 4 — export + framing guard | `SWARM_OT_export_bundle` operator in addon + `export_bundle_cli.py`. Framing check at 100% threshold with exact spec error message. RGB + ID EXR rendering per view. Bundle JSON files via `bundle_schema`. Commit `f8e1a00`. |
+| 2026-07-30 | Session 5 — pixel detector | `detect_blobs.py` with luminance threshold, OTSU, connected components, centroid extraction, size filtration. Unit tests restored from skip to pass (39/39). Edge cases covered. Commit `52a6322`. | |
