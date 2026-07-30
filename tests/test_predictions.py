@@ -508,6 +508,55 @@ class TestB5NViewsScaling:
             f"B3's Hungarian matching no longer produces overlapping tracks."
         )
 
+    def test_ghosts_at_low_camera_count(self):
+        """At 2 views with 1px noise, imprecise tracks must appear (not false tracks).
+
+        REFUTED PREDICTION: Ghosts were predicted to be zero at 2-3 views
+        (Hungarian one-to-one matching leaves no room for ambiguity).
+
+        ACTUAL MECHANISM: DLT from 2 noisy rays produces positions far from
+        truth, exceeding match_threshold. The track classification is IMPRECISE
+        (correct identity, bad position), NOT false_track (wrong identity).
+
+        This test asserts:
+        - At 2 views all_ground 1px noise: imprecise > 0 (ghosts from positional error)
+        - At 8 views all_ground 1px noise: imprecise = 0 (more baselines eliminate ghosts)
+        """
+        from b4_scoring import compute_detection_drone_ids
+
+        truth = _make_truth(area_km=AREA_KM_SMALL, n_drones=5, seed=SEED_SWARM)
+        det_ids = compute_detection_drone_ids(truth, _make_rig(truth, n_views=8))
+
+        # 2 views: must produce imprecise tracks
+        rig_2v = _make_rig(truth, n_views=2, standoff=STANDOFF, geometry='all_ground')
+        det_ids_2v = compute_detection_drone_ids(truth, rig_2v)
+        _, _, _, score_2v = _run_pipeline(truth, rig_2v, noise_std=1.0)
+        # Re-score with detection identity for classification
+        dets_2v = project_swarm_to_detections(truth, rig_2v, pixel_noise_std=1.0, drop_prob=0.0, seed=1)
+        tracks_2v = solve_correspondence(dets_2v, rig_2v, epipolar_threshold=3.0, min_views=2, max_reproj_error=5.0, seed=42)
+        recon_2v = triangulate_dlt(tracks_2v, rig_2v, dets_2v)
+        score_classified_2v = score_full(tracks_2v, recon_2v, truth, rig_2v,
+                                         position_threshold_m=MATCH_THRESHOLD,
+                                         detection_drone_ids=det_ids_2v)
+        assert score_classified_2v.correspondence.n_imprecise > 0, (
+            f"2v all_ground 1px: expected imprecise > 0, got {score_classified_2v.correspondence.n_imprecise}. "
+            f"DLT from 2 noisy rays should produce positions beyond threshold."
+        )
+
+        # 8 views: must have zero imprecise tracks
+        rig_8v = _make_rig(truth, n_views=8, standoff=STANDOFF, geometry='all_ground')
+        det_ids_8v = compute_detection_drone_ids(truth, rig_8v)
+        dets_8v = project_swarm_to_detections(truth, rig_8v, pixel_noise_std=1.0, drop_prob=0.0, seed=1)
+        tracks_8v = solve_correspondence(dets_8v, rig_8v, epipolar_threshold=3.0, min_views=2, max_reproj_error=5.0, seed=42)
+        recon_8v = triangulate_dlt(tracks_8v, rig_8v, dets_8v)
+        score_classified_8v = score_full(tracks_8v, recon_8v, truth, rig_8v,
+                                         position_threshold_m=MATCH_THRESHOLD,
+                                         detection_drone_ids=det_ids_8v)
+        assert score_classified_8v.correspondence.n_imprecise == 0, (
+            f"8v all_ground 1px: expected imprecise = 0, got {score_classified_8v.correspondence.n_imprecise}. "
+            f"More baselines should eliminate imprecise tracks."
+        )
+
     def test_noise_increases_error(self):
         """Prediction: DLT error scales approximately linearly with pixel noise.
 
