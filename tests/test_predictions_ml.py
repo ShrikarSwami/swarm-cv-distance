@@ -93,8 +93,7 @@ MANIFEST = [
     {"id": "tier_label_integrity", "title": "tier label integrity",
      "status": "active", "component": None},  # activated 2026-07-31 by T1
     {"id": "permutation_invariance", "title": "permutation invariance",
-     "status": "pending",
-     "component": "T6 ml/model.py"},
+     "status": "active", "component": None},  # activated 2026-07-31 by Wave 1 model build
     {"id": "metric_path_identity", "title": "metric path identity",
      "status": "pending",
      "component": "ml/metrics.py"},
@@ -435,8 +434,6 @@ def test_tier_label_integrity():
                     % (cam["tier"], elev)
 
 
-@pytest.mark.skip(reason="PENDING: activated by T6 ml/model.py — permutation "
-                         "invariance is non-negotiable for a set predictor")
 def test_permutation_invariance():
     """Joint (view, camera) permutation leaves the REAL path unchanged.
 
