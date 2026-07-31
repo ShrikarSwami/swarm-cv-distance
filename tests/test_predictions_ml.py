@@ -95,8 +95,7 @@ MANIFEST = [
     {"id": "permutation_invariance", "title": "permutation invariance",
      "status": "active", "component": None},  # activated 2026-07-31 by Wave 1 model build
     {"id": "metric_path_identity", "title": "metric path identity",
-     "status": "pending",
-     "component": "ml/metrics.py"},
+     "status": "active", "component": None},  # activated 2026-07-31 by Wave 1 metrics build
     {"id": "split_disjointness", "title": "split disjointness (G1)",
      "status": "active", "component": None},  # activated 2026-07-31 by T4 pack_dataset
 ]
@@ -497,8 +496,6 @@ def test_permutation_invariance():
         "pose-blind control changed under view reorder — pooling is not symmetric"
 
 
-@pytest.mark.skip(reason="PENDING: activated by ml/metrics.py — one frozen "
-                         "implementation shared by both tracks")
 def test_metric_path_identity():
     """Same input arrays -> geometric and ML produce identical metric values from the same code."""
     sys.path.insert(0, REPO_ROOT)
