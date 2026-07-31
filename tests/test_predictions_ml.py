@@ -5,12 +5,12 @@ Written BEFORE any ML component is built (build order step 1). These encode
 geometry and invariants as assertions, so architecture bugs fail loudly instead
 of surfacing as mediocre accuracy after hours of training.
 
-Six tests are active now: they check pure geometry/math with self-contained
-reference implementations, grounded in the frozen geometric-track conventions
-(`data_contract`, `detect_blobs.apparent_px`). Four are PENDING: they require a
-component that has not been built yet, and are skipped with an explicit reason
-naming the activating component. Activation = remove the skip marker; the body
-is already the real test.
+Tests that check pure geometry/math are active with self-contained reference
+implementations, grounded in the frozen geometric-track conventions
+(`data_contract`, `detect_blobs.apparent_px`). Tests that require a component
+not built yet are PENDING: skipped with an explicit reason naming the
+activating component. Activation = remove the skip marker; the body is already
+the real test.
 
 The manifest below lists all 10 tests with status; a meta-test asserts the
 count is 10 so none can be silently dropped, and enforces that pending tests
@@ -99,8 +99,7 @@ MANIFEST = [
      "status": "pending",
      "component": "ml/metrics.py"},
     {"id": "split_disjointness", "title": "split disjointness (G1)",
-     "status": "pending",
-     "component": "T4 ml/pack_dataset.py"},
+     "status": "active", "component": None},  # activated 2026-07-31 by T4 pack_dataset
 ]
 
 
@@ -519,8 +518,6 @@ def test_metric_path_identity():
         "the two tracks computed different metric values — they are not on the same code path"
 
 
-@pytest.mark.skip(reason="PENDING: activated by T4 ml/pack_dataset.py — G1 "
-                         "leak check against ml/splits.json")
 def test_split_disjointness():
     """Zero scene-seed overlap across train/val/test; PATCH 7 ranges respected."""
     import json
