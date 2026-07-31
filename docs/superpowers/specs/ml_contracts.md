@@ -281,20 +281,28 @@ dataloader passes it through unchanged:
 - Voxel cell `i` on an axis has world coordinate
   `center[axis] + (i + 0.5) * cell - radius_m`, where `cell = 2 * radius_m / VOXEL_GRID_RES`
   (matches the frozen `_voxel_centers` convention in `tests/test_predictions_ml.py`).
-- If `cameras is None` (the frozen permutation test path), `grid` is ignored and a
+- If `cameras is None` (the pose-blind ablation control), `grid` is ignored and a
   nominal default volume is used; the output shape is unchanged.
 
 ### 3.4 Permutation invariance (frozen test `test_permutation_invariance`)
 
-- `forward(views)` (no cameras) MUST return `np.allclose(forward(views), forward(views[::-1]), atol=1e-6)`.
-  Implemented by symmetric pooling (mean + max, concatenated) across views; with no
-  cameras every view is encoded by the shared-weight encoder and pooled **without any
-  pose warp** (each view treated identically). This is the pose-blind path — it exists to
-  satisfy the prediction test and is the pose-blind control, not the training path.
+**Subject of the test is the REAL path** — `forward(views, cameras, grid)` with pose
+(Ruling 1, 2026-07-31). A pose-blind bare call would validate code that never runs in
+training or evaluation.
+
 - `forward(views, cameras, grid)` MUST be invariant to a **joint** permutation of
   (view, camera) pairs — voxel fusion with symmetric mean+max pooling across views gives
-  this by construction. (Permuting views alone, leaving cameras fixed, changes the
-  pairing and is expected to change the output — that is correct behaviour, not a bug.)
+  this by construction. The frozen test shuffles the pairs JOINTLY and asserts
+  `np.allclose(out, out_jointly_shuffled, atol=1e-6)` on the real path.
+- The (view, camera) pairing must be **load-bearing**: the frozen test additionally
+  asserts that permuting views ALONE (cameras fixed) CHANGES the output — a model whose
+  output is unchanged under mispairing is ignoring camera geometry and fails the test.
+- **Pose-blind control (labelled ablation, NOT the test's subject):** `forward(views)`
+  (no cameras) is the "does the model use camera geometry or just count blobs?" control.
+  With no cameras every view is encoded by the shared-weight encoder and pooled
+  **without any pose warp** (each view treated identically). It must remain order-
+  invariant (`forward(views) == forward(views[::-1])`), asserted as a control in the
+  same test — but it is not what the permutation test is about.
 
 ### 3.5 Output heatmap and position extraction
 
@@ -323,6 +331,13 @@ from T0, not a tuning choice.
   forward + backward against a random target heatmap (no training loop, no training run;
   `ml/train.py` is T6). This is the largest unknown in the project and the 
   training wall-clock estimate for 3,000 scenes derives from it.
+- **Timing is measured in a CLEAN window only (Ruling 2026-07-31).** The render campaign
+  renders on the same Metal GPU throughout; any timing taken while it runs is
+  contaminated and must not be reported even with a caveat. Wave 1 (Agent C) builds and
+  validates `ml/model.py` normally — shape checks and permutation invariance against the
+  real path — then STOPS before timing. The orchestrator escalates for a clean
+  measurement window; the human pauses the render, the timing is measured, the human
+  resumes. No estimate may substitute for the measurement.
 
 ---
 

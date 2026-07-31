@@ -257,7 +257,11 @@ free parameter; a_max only requires that the swarm fills the frame, so any
 the repo focal — 90deg is near-fisheye and no real sensor uses it — and
 stay consistent with the frozen geometric track.
 
-Scenes are tagged with their cell. Generate both cells in the campaign.
+Scenes are tagged with their cell. Generate both cells in the campaign: each split's
+seed range is split into disjoint per-cell sub-ranges — primary takes the lower half,
+secondary the upper half (test 0-499/500-999, val 1000-1499/1500-1999, train
+2000-3499/3500-4999). The seed-keying harness property (T2) makes this mandatory: a
+seed rendered under one cell can never be rendered again under the other.
 
 Reserved seed ranges, fixed permanently before any data is generated:
     seeds 0-999      TEST. Locked. Not touched until final evaluation.
@@ -280,6 +284,21 @@ Scenes are seed-indexed and manifest-driven, so `--target 5000` after a
 - Drive-presence check before each scene, auto-pause rather than crash
 - Temp path + atomic rename, so unplug never leaves a half-written scene
 - Detached via `nohup`, wrapped in `caffeinate`
+
+**KNOWN HARNESS PROPERTY (2026-07-31, scratch-test verified):** scene directories are
+keyed by **seed alone**, not seed+cell (`scene_dir(root, seed)`). Rendering the same
+seed under a second `--cell` is a **silent no-op**: the seed is already in the manifest,
+so `pending_seeds` returns empty, the harness logs "target reached", exits 0, and
+creates nothing. There is no error anywhere — a primary-only dataset would be produced
+silently. Mitigation, in force for this campaign: **disjoint seed ranges per cell** —
+
+    test   0-499 primary / 500-999 secondary
+    val    1000-1499 primary / 1500-1999 secondary
+    train  2000-3499 primary / 3500-4999 secondary
+
+Any future campaign extension must use a **fresh seed range**; never re-render existing
+seeds under a different cell. Adding the secondary cell to a seed set already rendered
+primary would silently produce nothing.
 
 **Built and smoke-tested by an agent. The full campaign is launched by the human,
 detached, outside any agent session.**

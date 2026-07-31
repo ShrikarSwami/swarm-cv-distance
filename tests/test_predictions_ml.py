@@ -439,18 +439,66 @@ def test_tier_label_integrity():
 @pytest.mark.skip(reason="PENDING: activated by T6 ml/model.py — permutation "
                          "invariance is non-negotiable for a set predictor")
 def test_permutation_invariance():
-    """Shuffle input view order -> identical output within float tolerance."""
+    """Joint (view, camera) permutation leaves the REAL path unchanged.
+
+    Ruling 1 (2026-07-31): the permutation test's subject is the real,
+    pose-aware path `forward(views, cameras, grid)` — the code that runs in
+    training and evaluation. A pose-blind bare `forward(views)` call would
+    validate code that never runs. We shuffle the (view, camera) PAIRS
+    JOINTLY and require the fused heatmap to be unchanged within float
+    tolerance.
+
+    Two companion checks make the assertion meaningful:
+      - permuting views ALONE (cameras fixed) must CHANGE the output — the
+        (view, camera) pairing must be load-bearing, otherwise the model is
+        ignoring camera geometry;
+      - the pose-blind path `forward(views)` (no cameras) is a labelled
+        ABLATION CONTROL ("does the model use camera geometry or just count
+        blobs?") and must remain order-invariant — it is NOT the subject.
+    """
     sys.path.insert(0, REPO_ROOT)
-    from ml import model
+    from ml import model, scene_gen
 
+    # Real scene camera dicts (contract SS3.2 format, from the canonical
+    # generator) + the scene's own back-projection volume.
+    scene = scene_gen.generate_scene(seed=3, cell="primary")
+    cams = scene["cameras"][:8]  # V = 8 (contract: V in 1..24)
+    grid = {
+        "center": np.asarray(scene["swarm_center"], dtype=np.float32),
+        "radius_m": float(scene["radius_m"]),
+    }
     rng = np.random.default_rng(31)
-    views = [rng.normal(size=(3, IMAGE_H, IMAGE_W)) for _ in range(8)]
-    views_shuffled = views[::-1]
+    views = [rng.normal(size=(3, IMAGE_H, IMAGE_W)).astype(np.float32)
+             for _ in cams]
 
-    out = model.forward(views)
-    out_shuffled = model.forward(views_shuffled)
-    assert np.allclose(out, out_shuffled, atol=1e-6), \
-        "reordering the input views changed the output — the model is not a set predictor"
+    # SUBJECT — real path, jointly shuffled (view, camera) pairs.
+    out = model.forward(views, cameras=cams, grid=grid)
+    assert out.shape == (VOXEL_GRID_RES, VOXEL_GRID_RES, VOXEL_GRID_RES), \
+        "forward must return a fused (64, 64, 64) occupancy volume"
+    assert out.dtype == np.float32
+    assert np.all(out >= 0.0), "heatmap values must be >= 0"
+
+    perm = rng.permutation(len(cams))
+    views_p = [views[i] for i in perm]
+    cams_p = [cams[i] for i in perm]
+    out_p = model.forward(views_p, cameras=cams_p, grid=grid)
+    assert np.allclose(out, out_p, atol=1e-6), \
+        "jointly shuffling (view, camera) pairs changed the output — " \
+        "not a set predictor"
+
+    # The pairing must be load-bearing: views alone permuted (cameras fixed)
+    # re-pairs each view against the wrong pose and MUST change the volume.
+    out_mispaired = model.forward(views_p, cameras=cams, grid=grid)
+    assert not np.allclose(out, out_mispaired, atol=1e-6), \
+        "permuting views alone (cameras fixed) left the output unchanged — " \
+        "the model is ignoring camera geometry"
+
+    # Pose-blind control (labelled ablation, NOT the subject): no pose to warp
+    # by, so the pooled volume must stay order-invariant.
+    out_blind = model.forward(views)
+    out_blind_p = model.forward(views[::-1])
+    assert np.allclose(out_blind, out_blind_p, atol=1e-6), \
+        "pose-blind control changed under view reorder — pooling is not symmetric"
 
 
 @pytest.mark.skip(reason="PENDING: activated by ml/metrics.py — one frozen "
