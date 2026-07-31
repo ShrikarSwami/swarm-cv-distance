@@ -69,7 +69,7 @@ SWEEP_AXES = {
     "n_views": [2, 4, 6, 8, 10, 12],
     "geometry_class": ["all_ground", "mixed", "surround"],
     "noise_std_px": [0.0, 1.0, 3.0],
-    "n_drones": [5, 10, 15],
+    "n_drones": [5, 10, 15, 30, 50, 100],
 }
 
 CSV_COLUMNS = [
