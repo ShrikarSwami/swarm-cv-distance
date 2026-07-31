@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-31T17:55:06+00:00",
+  "generated_at": "2026-07-31T17:56:56+00:00",
   "hardware": "Apple M4 Pro, 24 GB",
   "platform": "Darwin (25.5.0)",
   "blender_version": "Blender 5.2.0 LTS",
@@ -80,39 +80,39 @@
   "eevee_seconds_per_frame": {
     "1280": {
       "rep_times_s": [
-        0.0608,
-        0.058,
-        0.0604
+        0.0589,
+        0.0597,
+        0.0583
       ],
-      "median_s": 0.0604,
-      "steady_state_s": 0.0604
+      "median_s": 0.0589,
+      "steady_state_s": 0.0589
     },
     "1920": {
       "rep_times_s": [
-        0.1268,
-        0.1307,
-        0.1136
+        0.1216,
+        0.1084,
+        0.1068
       ],
-      "median_s": 0.1268,
-      "steady_state_s": 0.1268
+      "median_s": 0.1084,
+      "steady_state_s": 0.1084
     },
     "2560": {
       "rep_times_s": [
-        0.1991,
-        0.1856,
-        0.1895
+        0.2158,
+        0.1871,
+        0.1825
       ],
-      "median_s": 0.1895,
-      "steady_state_s": 0.1895
+      "median_s": 0.1871,
+      "steady_state_s": 0.1871
     },
     "3840": {
       "rep_times_s": [
-        0.495,
-        0.3905,
-        0.3993
+        0.4949,
+        0.4066,
+        0.4513
       ],
-      "median_s": 0.3993,
-      "steady_state_s": 0.3993
+      "median_s": 0.4513,
+      "steady_state_s": 0.4513
     }
   },
   "png_bytes_per_render": {
@@ -125,9 +125,9 @@
     "mode": "warmup",
     "width": 1280,
     "height": 720,
-    "seconds": 0.168619,
+    "seconds": 0.21934,
     "png_bytes": 16714,
-    "png_path": "/var/folders/ww/fg2xsx8x56xghwc_sztj78b00000gn/T/swarm_ml_calib_gjuxms22/warmup.png"
+    "png_path": "/var/folders/ww/fg2xsx8x56xghwc_sztj78b00000gn/T/swarm_ml_calib_p6l7e2xl/warmup.png"
   },
   "empirical_cell": {
     "swarm_radius_m": 100,
@@ -181,7 +181,7 @@
     },
     "within_tolerance": false,
     "p7_pass": false,
-    "render_seconds": 0.2222,
+    "render_seconds": 0.2193,
     "png_bytes": 30817,
     "detect_blobs_cross_check": {
       "n_blobs": 1,
@@ -201,7 +201,7 @@
     "analysis": "P7 literal criterion FAILS: measured blob extent (OTSU bbox 6 px, FWHM bbox 6 px, FWHM eq-diameter 6.38 px) is 25% above the expected 4.8 px. Investigation established this is NOT a render or scene-scale error: well-resolved reference renders of the same 0.5 m cube with the identical camera/render/measure pipeline measure 50 px at 10 m (formula 48 px) and 20 px at 25 m (formula 19.2 px), i.e. the same ~+1 px absolute half-max/AA threshold bias that is 25% relative at the 4.8 px scale. The rendered blob's fully-covered core is 4 px and the geometric front-face width is 4.8 px (0.5*960/100). The measurement is threshold- and colorspace-sensitive at this scale: in linear light (Raw view transform) the FWHM bbox is 4 px, in sRGB it is 6 px. The formula UNDER-predicts the threshold-visible blob, which is conservative for detectability (G0 unaffected). Recommendation: human adjudicates whether the +/-20% window is appropriate for a ~5 px measurement whose quantization+AA floor is ~+/-1 px."
   },
   "free_space": {
-    "internal_ssd_bytes": 106317918208,
+    "internal_ssd_bytes": 106301128704,
     "internal_ssd_path": "/System/Volumes/Data",
     "external_bytes": 3950384488448,
     "external_path": "/Volumes/My Passport",
@@ -230,75 +230,75 @@
         "swarm_radius_m": 50,
         "image_width_px": 1280,
         "a_max_px": 6.4,
-        "eevee_seconds_per_frame_s": 0.0604
+        "eevee_seconds_per_frame_s": 0.0589
       },
       {
         "swarm_radius_m": 50,
         "image_width_px": 1920,
         "a_max_px": 9.6,
-        "eevee_seconds_per_frame_s": 0.1268
+        "eevee_seconds_per_frame_s": 0.1084
       },
       {
         "swarm_radius_m": 50,
         "image_width_px": 2560,
         "a_max_px": 12.8,
-        "eevee_seconds_per_frame_s": 0.1895
+        "eevee_seconds_per_frame_s": 0.1871
       },
       {
         "swarm_radius_m": 50,
         "image_width_px": 3840,
         "a_max_px": 19.2,
-        "eevee_seconds_per_frame_s": 0.3993
+        "eevee_seconds_per_frame_s": 0.4513
       },
       {
         "swarm_radius_m": 100,
         "image_width_px": 1280,
         "a_max_px": 3.2,
-        "eevee_seconds_per_frame_s": 0.0604
+        "eevee_seconds_per_frame_s": 0.0589
       },
       {
         "swarm_radius_m": 100,
         "image_width_px": 1920,
         "a_max_px": 4.8,
-        "eevee_seconds_per_frame_s": 0.1268
+        "eevee_seconds_per_frame_s": 0.1084
       },
       {
         "swarm_radius_m": 100,
         "image_width_px": 2560,
         "a_max_px": 6.4,
-        "eevee_seconds_per_frame_s": 0.1895
+        "eevee_seconds_per_frame_s": 0.1871
       },
       {
         "swarm_radius_m": 100,
         "image_width_px": 3840,
         "a_max_px": 9.6,
-        "eevee_seconds_per_frame_s": 0.3993
+        "eevee_seconds_per_frame_s": 0.4513
       },
       {
         "swarm_radius_m": 200,
         "image_width_px": 1920,
         "a_max_px": 2.4,
-        "eevee_seconds_per_frame_s": 0.1268
+        "eevee_seconds_per_frame_s": 0.1084
       },
       {
         "swarm_radius_m": 200,
         "image_width_px": 2560,
         "a_max_px": 3.2,
-        "eevee_seconds_per_frame_s": 0.1895
+        "eevee_seconds_per_frame_s": 0.1871
       },
       {
         "swarm_radius_m": 200,
         "image_width_px": 3840,
         "a_max_px": 4.8,
-        "eevee_seconds_per_frame_s": 0.3993
+        "eevee_seconds_per_frame_s": 0.4513
       },
       {
         "swarm_radius_m": 400,
         "image_width_px": 3840,
         "a_max_px": 2.4,
-        "eevee_seconds_per_frame_s": 0.3993
+        "eevee_seconds_per_frame_s": 0.4513
       }
     ],
-    "rationale": "G0 passes iff at least one grid cell has a_max >= 2.0 px at a resolution whose measured steady-state EEVEE time is <= 30.0 s. The 30.0 s ceiling is a documented conservative choice: EEVEE on this M4 Pro measures ~0.40 s/frame at 3840x2160, so the ceiling is not binding; the point is an explicit, auditable criterion."
+    "rationale": "G0 passes iff at least one grid cell has a_max >= 2.0 px at a resolution whose measured steady-state EEVEE time is <= 30.0 s. The 30.0 s ceiling is a documented conservative choice: EEVEE on this M4 Pro measures ~0.45 s/frame at 3840x2160, so the ceiling is not binding; the point is an explicit, auditable criterion."
   }
 }
