@@ -64,8 +64,28 @@ Log predicted, observed, ratio, match. Falsified predictions go in the report.
   ~6px at OTSU threshold. The formula describes geometric projection; the
   detector consumes the AA-widened blob. Under-predicts in the safe
   direction. |
-| P7b | measured_extent(OTSU) = a_max + 1.0px +/- 0.5px. Verify at R=50m
-  where the offset is ~10% rather than 25%. |
+| P7b | **OPEN** (Ruling 2026-07-31) — NOT resolved. Two candidate models,
+  and the data cannot yet separate them:
+  (A) **additive**: measured_extent(OTSU) = a_max + ~1.0–1.2px (P7b as
+      registered, the +1.2 upper edge from the T0 references);
+  (B) **multiplicative**: measured_extent = ~1.33 × a_max (the P7 ratio).
+  The two are indistinguishable at the P7b verification scale (R=50m, a_max
+  9.6px): OTSU bbox is the most quantized measure in the table (integers only:
+  6 and 12 px), and an integer bbox cannot tell a true 10.8px from 12px, so
+  the cleanest-looking measure is also the least discriminating.
+  **Contradiction from T0 references:** T0's well-resolved reference renders
+  (48px @ 10m, 19.2px @ 25m) reportedly matched the formula within ~+1px. At
+  a_max 19.2, (A) predicts 20.4px and (B) predicts 25.5px; T0 reported ~20px.
+  Either those references used a different measurement convention (which must
+  be stated), or (B) is already falsified by T0 data. Two points cannot
+  distinguish additive from multiplicative, and both models were fit AFTER the
+  P7 prediction failed — a fitted curve, not a validated one.
+  Does not block anything: at R=50 the measured extent is directly observed,
+  and the encoder-stride constraint holds either way. |
+| P7c | **QUEUED** (Ruling 2026-07-31 — do not run now). One render at R=25m
+  (a_max 19.2px), where the models diverge by ~5px. PREDICT BOTH VALUES
+  BEFORE MEASURING: (A) additive ≈ 20.4px, (B) multiplicative ≈ 25.5px.
+  Then reconcile against the T0 reference points. |
 
 P6 is the guard, not a finding. See T8.
 
@@ -330,6 +350,14 @@ Acceptance: G2 passes, then full training completes and checkpoints load.
 ### T7 — Evaluation sweep
 
 Both tracks, all compositions, all densities, shared frozen harness.
+
+**SIZED (Ruling 2026-07-31).** The naive full sweep is
+~161 compositions x 6 density bins x 500 scenes = ~480,000 forward passes,
+roughly 40h on MPS — longer than rendering and training combined. Do NOT
+launch the naive version. Sized instead: **100 test scenes per cell, 3 density
+bins (low ~10, mid ~35, high ~55, straddling the ~50-drone false-track
+threshold)** = ~48,000 forward passes. This sizing is fixed in the spec now;
+it is not a tuning choice.
 
 Acceptance: results table + mAP-vs-views plots, one curve per composition; G4
 evaluated and reported.
