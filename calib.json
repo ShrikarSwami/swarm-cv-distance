@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-31T17:53:51+00:00",
+  "hardware": "Apple M4 Pro, 24 GB",
+  "platform": "Darwin (25.5.0)",
+  "blender_version": "Blender 5.2.0 LTS",
+  "drone_size_m": 0.5,
+  "a_max_formula": "a_max = drone_size * image_width / (2 * swarm_radius)",
+  "a_max_table": {
+    "50": {
+      "1280": 6.4,
+      "1920": 9.6,
+      "2560": 12.8,
+      "3840": 19.2
+    },
+    "100": {
+      "1280": 3.2,
+      "1920": 4.8,
+      "2560": 6.4,
+      "3840": 9.6
+    },
+    "200": {
+      "1280": 1.6,
+      "1920": 2.4,
+      "2560": 3.2,
+      "3840": 4.8
+    },
+    "400": {
+      "1280": 0.8,
+      "1920": 1.2,
+      "2560": 1.6,
+      "3840": 2.4
+    },
+    "800": {
+      "1280": 0.4,
+      "1920": 0.6,
+      "2560": 0.8,
+      "3840": 1.2
+    }
+  },
+  "a_max_pass_mask": {
+    "50": {
+      "1280": true,
+      "1920": true,
+      "2560": true,
+      "3840": true
+    },
+    "100": {
+      "1280": true,
+      "1920": true,
+      "2560": true,
+      "3840": true
+    },
+    "200": {
+      "1280": false,
+      "1920": true,
+      "2560": true,
+      "3840": true
+    },
+    "400": {
+      "1280": false,
+      "1920": false,
+      "2560": false,
+      "3840": true
+    },
+    "800": {
+      "1280": false,
+      "1920": false,
+      "2560": false,
+      "3840": false
+    }
+  },
+  "focal_convention": {
+    "description": "focal_px = image_width / 2 (90 deg horizontal FOV). This is the convention implied by a_max = d*W/(2R): a d-sized drone at range R spans d * (W/2) / R px. lens_mm = focal_px * 36.0 / W = 18.0 mm for every candidate resolution. The repo's default focal 2666.67 px @ 1920 is a different, narrow-FOV convention and was NOT used for the empirical cell.",
+    "sensor_width_mm": 36.0,
+    "sensor_fit": "HORIZONTAL",
+    "lens_mm": 18.0,
+    "note": "focal_px = W/2 (90 deg HFOV) implied by the a_max formula"
+  },
+  "eevee_seconds_per_frame": {
+    "1280": {
+      "rep_times_s": [
+        0.0579,
+        0.0528,
+        0.0539
+      ],
+      "median_s": 0.0539,
+      "steady_state_s": 0.0539
+    },
+    "1920": {
+      "rep_times_s": [
+        0.1169,
+        0.1051,
+        0.1059
+      ],
+      "median_s": 0.1059,
+      "steady_state_s": 0.1059
+    },
+    "2560": {
+      "rep_times_s": [
+        0.2263,
+        0.2012,
+        0.1862
+      ],
+      "median_s": 0.2012,
+      "steady_state_s": 0.2012
+    },
+    "3840": {
+      "rep_times_s": [
+        0.5222,
+        0.4103,
+        0.4003
+      ],
+      "median_s": 0.4103,
+      "steady_state_s": 0.4103
+    }
+  },
+  "png_bytes_per_render": {
+    "1280": 16714,
+    "1920": 33441,
+    "2560": 56009,
+    "3840": 118436
+  },
+  "timing_warmup": {
+    "mode": "warmup",
+    "width": 1280,
+    "height": 720,
+    "seconds": 0.158192,
+    "png_bytes": 16714,
+    "png_path": "/var/folders/ww/fg2xsx8x56xghwc_sztj78b00000gn/T/swarm_ml_calib_qb1oar8u/warmup.png"
+  },
+  "empirical_cell": {
+    "swarm_radius_m": 100,
+    "image_width_px": 1920,
+    "expected_a_max_px": 4.8,
+    "predicted_before_render_px": 4.8,
+    "tolerance_pct": 20.0,
+    "tolerance_range_px": [
+      3.84,
+      5.76
+    ],
+    "measured": {
+      "fwhm_extent_px": 6,
+      "otsu_extent_px": 6,
+      "equivalent_diameter_px": 6.3831,
+      "bbox_extent_px": 6,
+      "fwhm": {
+        "threshold": 0.5,
+        "area_px": 32,
+        "equivalent_diameter_px": 6.3831,
+        "bbox_extent_px": 6,
+        "bbox_rows_cols": [
+          537,
+          957,
+          543,
+          963
+        ],
+        "centroid_xy": [
+          959.5,
+          539.5
+        ]
+      },
+      "otsu": {
+        "threshold": 0.494233,
+        "via": "otsu",
+        "degenerated": false,
+        "area_px": 32,
+        "equivalent_diameter_px": 6.3831,
+        "bbox_extent_px": 6,
+        "bbox_rows_cols": [
+          537,
+          957,
+          543,
+          963
+        ],
+        "centroid_xy": [
+          959.5,
+          539.5
+        ]
+      }
+    },
+    "within_tolerance": false,
+    "p7_pass": false,
+    "render_seconds": 0.234,
+    "png_bytes": 30817,
+    "detect_blobs_cross_check": {
+      "n_blobs": 1,
+      "centroids_xy": [
+        [
+          959.5,
+          539.5
+        ]
+      ],
+      "expected_apparent_px": 4.8,
+      "image_size": [
+        1920,
+        1080
+      ]
+    },
+    "scene_description": "one 0.5 m emissive cube at world (0,0,100); camera at origin, 90 deg HFOV (focal_px=960 at W=1920, lens 18.0 mm, sensor 36 mm HORIZONTAL); dark world background (0.03,0.03,0.03); EEVEE PNG RGB 8-bit",
+    "analysis": "P7 literal criterion FAILS: measured blob extent (OTSU bbox 6 px, FWHM bbox 6 px, FWHM eq-diameter 6.38 px) is 25% above the expected 4.8 px. Investigation established this is NOT a render or scene-scale error: well-resolved reference renders of the same 0.5 m cube with the identical camera/render/measure pipeline measure 50 px at 10 m (formula 48 px) and 20 px at 25 m (formula 19.2 px), i.e. the same ~+1 px absolute half-max/AA threshold bias that is 25% relative at the 4.8 px scale. The rendered blob's fully-covered core is 4 px and the geometric front-face width is 4.8 px (0.5*960/100). The measurement is threshold- and colorspace-sensitive at this scale: in linear light (Raw view transform) the FWHM bbox is 4 px, in sRGB it is 6 px. The formula UNDER-predicts the threshold-visible blob, which is conservative for detectability (G0 unaffected). Recommendation: human adjudicates whether the +/-20% window is appropriate for a ~5 px measurement whose quantization+AA floor is ~+/-1 px."
+  },
+  "free_space": {
+    "internal_ssd_bytes": 106329272320,
+    "internal_ssd_path": "/System/Volumes/Data",
+    "external_bytes": 3950384488448,
+    "external_path": "/Volumes/My Passport",
+    "external_mounted": true
+  },
+  "external_drive": {
+    "name": "My Passport 2665",
+    "vendor": "Western Digital",
+    "filesystem": "ntfs",
+    "mounted_read_only": true,
+    "hdd_or_ssd": "HDD",
+    "evidence": [
+      "mount: /dev/disk6s1 on /Volumes/My Passport (ntfs, local, nodev, nosuid, read-only, noowners, noatime, fskit)",
+      "diskutil info volume: File System Personality:   NTFS | Media Type:                Generic | Protocol:                  USB | Disk Size:                 4.0 TB (4000750501888 Bytes) (exactly 7813965824 512-Byte-Units) | Volume Read-Only:          Yes (read-only mount flag set) | Removable Media:           Fixed | Solid State:               Info not available",
+      "diskutil info device /dev/disk6: Device / Media Name:       My Passport 2665 | Protocol:                  USB | Disk Size:                 4.0 TB (4000752599040 Bytes) (exactly 7813969920 512-Byte-Units) | Device Location:           External | Solid State:               Info not available",
+      "ioreg USB: vendor='Western Digital' product='My Passport 2665'"
+    ],
+    "classification_note": "'My Passport 2665' is Western Digital's portable HDD product line (the SSD variant is separately branded 'My Passport SSD'). 4 TB, USB protocol, SMART blocked over USB (Solid State: Info not available). Classified HDD from product identity; not spinning-disk benchmarked to avoid any write to the drive."
+  },
+  "gate": {
+    "g0": "PASS",
+    "acceptable_render_time_s": 30.0,
+    "a_max_min_px": 2.0,
+    "qualifying_cells": [
+      {
+        "swarm_radius_m": 50,
+        "image_width_px": 1280,
+        "a_max_px": 6.4,
+        "eevee_seconds_per_frame_s": 0.0539
+      },
+      {
+        "swarm_radius_m": 50,
+        "image_width_px": 1920,
+        "a_max_px": 9.6,
+        "eevee_seconds_per_frame_s": 0.1059
+      },
+      {
+        "swarm_radius_m": 50,
+        "image_width_px": 2560,
+        "a_max_px": 12.8,
+        "eevee_seconds_per_frame_s": 0.2012
+      },
+      {
+        "swarm_radius_m": 50,
+        "image_width_px": 3840,
+        "a_max_px": 19.2,
+        "eevee_seconds_per_frame_s": 0.4103
+      },
+      {
+        "swarm_radius_m": 100,
+        "image_width_px": 1280,
+        "a_max_px": 3.2,
+        "eevee_seconds_per_frame_s": 0.0539
+      },
+      {
+        "swarm_radius_m": 100,
+        "image_width_px": 1920,
+        "a_max_px": 4.8,
+        "eevee_seconds_per_frame_s": 0.1059
+      },
+      {
+        "swarm_radius_m": 100,
+        "image_width_px": 2560,
+        "a_max_px": 6.4,
+        "eevee_seconds_per_frame_s": 0.2012
+      },
+      {
+        "swarm_radius_m": 100,
+        "image_width_px": 3840,
+        "a_max_px": 9.6,
+        "eevee_seconds_per_frame_s": 0.4103
+      },
+      {
+        "swarm_radius_m": 200,
+        "image_width_px": 1920,
+        "a_max_px": 2.4,
+        "eevee_seconds_per_frame_s": 0.1059
+      },
+      {
+        "swarm_radius_m": 200,
+        "image_width_px": 2560,
+        "a_max_px": 3.2,
+        "eevee_seconds_per_frame_s": 0.2012
+      },
+      {
+        "swarm_radius_m": 200,
+        "image_width_px": 3840,
+        "a_max_px": 4.8,
+        "eevee_seconds_per_frame_s": 0.4103
+      },
+      {
+        "swarm_radius_m": 400,
+        "image_width_px": 3840,
+        "a_max_px": 2.4,
+        "eevee_seconds_per_frame_s": 0.4103
+      }
+    ],
+    "rationale": "G0 passes iff at least one grid cell has a_max >= 2.0 px at a resolution whose measured steady-state EEVEE time is <= 30.0 s. The 30.0 s ceiling is a documented conservative choice: EEVEE on this M4 Pro measures ~0.41 s/frame at 3840x2160, so the ceiling is not binding; the point is an explicit, auditable criterion."
+  }
+}
