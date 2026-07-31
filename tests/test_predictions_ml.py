@@ -91,8 +91,7 @@ MANIFEST = [
     {"id": "single_view_degenerate", "title": "single view is degenerate",
      "status": "active", "component": None},
     {"id": "tier_label_integrity", "title": "tier label integrity",
-     "status": "pending",
-     "component": "T1 ml/scene_gen.py"},
+     "status": "active", "component": None},  # activated 2026-07-31 by T1
     {"id": "permutation_invariance", "title": "permutation invariance",
      "status": "pending",
      "component": "T6 ml/model.py"},
@@ -420,9 +419,6 @@ def test_single_view_degenerate():
 # marker; the body is the real test).
 # ===========================================================================
 
-@pytest.mark.skip(reason="PENDING: activated by T1 ml/scene_gen.py — elevation "
-                         "recomputed from extrinsics must match the declared tier "
-                         "for every camera in every generated scene")
 def test_tier_label_integrity():
     """Elevation recomputed from extrinsics matches the declared tier, every camera, every scene."""
     sys.path.insert(0, REPO_ROOT)
