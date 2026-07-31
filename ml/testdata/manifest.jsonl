@@ -1,0 +1,2 @@
+{"scene_id": 0, "seed": 0, "split": "test", "cell": "primary", "cell_radius_m": 50.0, "a_max_px": 9.6, "n_drones": 52, "n_views": 24, "png_bytes_total": 1284443, "scene_bytes": 1318138, "render_wall_s": null, "adopted": false, "finished_at": "2026-07-31T19:18:04+00:00"}
+{"scene_id": 1, "seed": 1, "split": "test", "cell": "primary", "cell_radius_m": 50.0, "a_max_px": 9.6, "n_drones": 31, "n_views": 24, "png_bytes_total": 1079629, "scene_bytes": 1111260, "render_wall_s": null, "adopted": false, "finished_at": "2026-07-31T19:18:07+00:00"}
