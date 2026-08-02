@@ -258,16 +258,16 @@ def _voxel_centers(center, radius):
     return (centers + np.asarray(center, dtype=np.float64)).reshape(-1, 3)
 
 
-def _build_target(positions, center, radius):
+def _build_target(positions, center, radius, sigma_cells=TARGET_SIGMA_CELLS):
     """3D Gaussian heatmap target (64,64,64) float32, values in [0, 1].
 
     max (not sum) over drones so overlapping blobs never exceed peak 1 and the
-    count regulariser stays meaningful. sigma = TARGET_SIGMA_CELLS * voxel
-    (1.5 == reference test_heatmap_target_fidelity).
+    count regulariser stays meaningful. sigma = sigma_cells * voxel
+    (default 1.5 == reference test_heatmap_target_fidelity).
     """
     res = VOXEL_GRID_RES
     cell = 2.0 * radius / res
-    sigma = TARGET_SIGMA_CELLS * cell
+    sigma = sigma_cells * cell
     centers = _voxel_centers(center, radius)          # (64^3, 3) float64
     h = np.zeros(centers.shape[0], dtype=np.float64)
     for p in np.asarray(positions, dtype=np.float64):
@@ -276,13 +276,16 @@ def _build_target(positions, center, radius):
     return h.reshape(res, res, res).astype(np.float32)
 
 
-def _target_for_scene(scene_id, positions, center, radius):
+def _target_for_scene(scene_id, positions, center, radius,
+                       sigma_cells=TARGET_SIGMA_CELLS):
     """Cached per-scene target (deterministic; independent of the view subset)."""
-    if scene_id not in _TARGET_CACHE:
-        _TARGET_CACHE[scene_id] = _build_target(positions, center, radius)
+    cache_key = (scene_id, float(sigma_cells))
+    if cache_key not in _TARGET_CACHE:
+        _TARGET_CACHE[cache_key] = _build_target(
+            positions, center, radius, sigma_cells)
         while len(_TARGET_CACHE) > _TARGET_CACHE_MAX:
             _TARGET_CACHE.popitem(last=False)
-    return _TARGET_CACHE[scene_id]
+    return _TARGET_CACHE[cache_key]
 
 
 def _peak_support_mask(target):
@@ -348,11 +351,12 @@ class SceneDataset(torch.utils.data.Dataset):
       scene_id / view_indices / tier_mix for logging
     """
 
-    def __init__(self, scenes):
+    def __init__(self, scenes, sigma_cells=TARGET_SIGMA_CELLS):
         # scenes: list of (scene_id, shard_path, row)
         self.scenes = scenes
         self.sids = [s[0] for s in scenes]
         self._row = {s[0]: (s[1], s[2]) for s in scenes}
+        self.sigma_cells = sigma_cells
 
     def __len__(self):
         return len(self.scenes)
@@ -372,7 +376,8 @@ class SceneDataset(torch.utils.data.Dataset):
         center = d["swarm_center"][row]
         radius = float(d["radius_m"][row])
         n_drones = int(d["n_drones"][row])
-        target = _target_for_scene(int(scene_id), positions, center, radius)
+        target = _target_for_scene(int(scene_id), positions, center, radius,
+                                    self.sigma_cells)
         peak_mask = _peak_support_mask(target)
         vpp = float((target * peak_mask).sum() / n_drones) if n_drones > 0 \
             else 1.0
@@ -555,7 +560,7 @@ def bench_io(args):
     split_name, scene_ids, scenes = resolve_scenes(args, splits)
     epoch_len = len(scene_ids)
     total = max(int(args.bench_io), 1)
-    dataset = SceneDataset(scenes)
+    dataset = SceneDataset(scenes, args.target_sigma)
     sampler = ViewSubsetSampler(scene_ids, args.min_views, args.max_views,
                                 args.seed, total + 1)  # +1 warmup
     loader = torch.utils.data.DataLoader(
@@ -789,7 +794,7 @@ def run_training(args):
               % (start_step, total_steps))
         return 0
 
-    dataset = SceneDataset(scenes)
+    dataset = SceneDataset(scenes, args.target_sigma)
     sampler = ViewSubsetSampler(scene_ids, args.min_views, args.max_views,
                                 args.seed, total_steps,
                                 rng_state=sampler_rng_state)
@@ -810,7 +815,7 @@ def run_training(args):
         "lr": args.lr,
         "count_weight": args.count_weight,
         "pos_weight": args.pos_weight,
-        "target_sigma_cells": TARGET_SIGMA_CELLS,
+        "target_sigma_cells": args.target_sigma,
         "total_steps": total_steps,
         "epoch_len": epoch_len,
     }
@@ -963,6 +968,11 @@ def _build_parser():
                         "value below the frozen extract_positions threshold "
                         "(pred_max*1e-3) so the diffuse background leaves no "
                         "spurious local-maxima peaks")
+    p.add_argument("--target-sigma", type=float, default=TARGET_SIGMA_CELLS,
+                   help="Gaussian target sigma in voxel cells (default 1.5, "
+                        "fix 3 from the diagnosis: broader targets are easier "
+                        "to fit and produce smoother volumes with fewer "
+                        "spurious local maxima)")
     p.add_argument("--workers", type=int, default=2,
                    help="dataloader worker processes (>= 2 required)")
     p.add_argument("--prefetch", type=int, default=2,
