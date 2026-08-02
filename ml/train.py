@@ -205,6 +205,13 @@ COUNT_MASK_T = 0.1
 # COUNT_FLOOR is the background-excess floor: background voxels below it are
 # invisible to the background sub-term (observed converged background is
 # ~0.04-0.08), and voxels above it are pushed down until they drop below.
+#
+# For the G2 gate the floor must also sit BELOW the frozen extract_positions
+# threshold (h.max()*1e-3) or the diffuse background leaves hundreds of
+# spurious local-maxima peaks (measured: count_err +300..+386 with pred_max
+# 0.14 and floor 0.1). The gate run passes --bg-floor 1e-4 to crush the
+# background below any realistic threshold; the default stays 0.1 for the
+# documented full-training calibration.
 COUNT_FLOOR = 0.1
 # Relative weight of the background-excess sub-term inside `count`.
 COUNT_BG_WEIGHT = 1.0
@@ -592,7 +599,8 @@ class _GracefulStop(Exception):
     pass
 
 
-def _make_train_step(model, optimizer, batch, device, count_weight, pos_weight):
+def _make_train_step(model, optimizer, batch, device, count_weight, pos_weight,
+                     bg_floor):
     views = batch["views"].to(device)
     target = batch["target"].to(device)
     peak_mask = batch["peak_mask"].to(device)
@@ -609,7 +617,7 @@ def _make_train_step(model, optimizer, batch, device, count_weight, pos_weight):
     w = 1.0 + pos_weight * target
     mse = ((pred - target).square() * w).mean()
     in_mass = (pred * peak_mask).sum() / batch["vpp"]
-    bg_excess = torch.relu(pred - COUNT_FLOOR) * (1.0 - peak_mask)
+    bg_excess = torch.relu(pred - bg_floor) * (1.0 - peak_mask)
     bg_drones = bg_excess.sum() / batch["vpp"]
     count = ((in_mass - batch["n_drones"]).square()
              + COUNT_BG_WEIGHT * bg_drones.square())
@@ -809,7 +817,7 @@ def run_training(args):
             t1 = time.perf_counter()
             loss, mse, count, in_mass, bg_drones = _make_train_step(
                 model, optimizer, batch, device, args.count_weight,
-                args.pos_weight)
+                args.pos_weight, args.bg_floor)
             if args.device == "mps":
                 torch.mps.synchronize()
             t2 = time.perf_counter()
@@ -919,6 +927,12 @@ def _build_parser():
                         "excess, each normalised to drones). ACTIVE in --overfit "
                         "mode too: it is the peak-mass counter-pressure that "
                         "forces real mass on the drone support")
+    p.add_argument("--bg-floor", type=float, default=COUNT_FLOOR,
+                   help="background-excess floor for the count term's bg "
+                        "sub-term (see COUNT_FLOOR). For the G2 gate, pass a "
+                        "value below the frozen extract_positions threshold "
+                        "(pred_max*1e-3) so the diffuse background leaves no "
+                        "spurious local-maxima peaks")
     p.add_argument("--workers", type=int, default=2,
                    help="dataloader worker processes (>= 2 required)")
     p.add_argument("--prefetch", type=int, default=2,
