@@ -600,22 +600,41 @@ class _GracefulStop(Exception):
 
 
 def _make_train_step(model, optimizer, batch, device, count_weight, pos_weight,
-                     bg_floor):
+                     bg_floor, loss_mode="mse", focal_alpha=2.0, focal_beta=4.0):
     views = batch["views"].to(device)
     target = batch["target"].to(device)
     peak_mask = batch["peak_mask"].to(device)
     optimizer.zero_grad(set_to_none=True)
     pred = model.forward_volume(views, batch["cameras"], batch["grid"])[0, 0]
-    # Sparse-target dilution fix (see module "LOSS" docstring): upweight the
-    # drone-support voxels so a flat near-zero output is no longer a local
-    # optimum. The weight is PROPORTIONAL to the target value (w = 1 +
-    # pos_weight * target): the peak core (target ~ 1) gets ~1+pos_weight, the
-    # Gaussian shoulder a smaller upweight, and voxels where the float64
-    # Gaussian tail has merely not underflowed to zero (target ~ 1e-300; ~63%
-    # of the 64^3 grid — NOT the sparse support) get weight ~ 1 and no spurious
-    # downward force on the region surrounding the peaks.
-    w = 1.0 + pos_weight * target
-    mse = ((pred - target).square() * w).mean()
+    if loss_mode == "focal":
+        # CenterNet-style penalty-reduced focal loss (the standard fix for the
+        # sparse-target dilution failure). Normalised by the scene's drone count
+        # (N objects), NOT the 64^3 voxel count, so the ~<1% positive voxels are
+        # not diluted. The pos term pushes the peak cores toward 1 (log(pred),
+        # with (1-pred)^alpha focusing on lagging positives); the neg term pushes
+        # everything else toward 0 with (1-target)^beta downweighting the
+        # Gaussian shoulders near each peak and pred^alpha focusing on hard
+        # negatives (the diffuse background / spurious peaks).
+        pc = pred.clamp(min=1e-6, max=1.0 - 1e-6)
+        n_obj = max(float(batch["n_drones"]), 1.0)
+        pos_mask = (target > 0.5).float()
+        neg_mask = (target <= 0.5).float()
+        pos_loss = -(((1.0 - pc) ** focal_alpha) * torch.log(pc)
+                     * pos_mask).sum() / n_obj
+        neg_loss = -((((1.0 - target) ** focal_beta) * (pc ** focal_alpha)
+                      * torch.log(1.0 - pc)) * neg_mask).sum() / n_obj
+        mse = pos_loss + neg_loss
+    else:
+        # Weighted-MSE mode (default). Sparse-target dilution fix: upweight the
+        # drone-support voxels so a flat near-zero output is no longer a local
+        # optimum. The weight is PROPORTIONAL to the target value (w = 1 +
+        # pos_weight * target): the peak core (target ~ 1) gets ~1+pos_weight,
+        # the Gaussian shoulder a smaller upweight, and voxels where the float64
+        # Gaussian tail has merely not underflowed to zero (target ~ 1e-300;
+        # ~63% of the 64^3 grid — NOT the sparse support) get weight ~ 1 and no
+        # spurious downward force on the region surrounding the peaks.
+        w = 1.0 + pos_weight * target
+        mse = ((pred - target).square() * w).mean()
     in_mass = (pred * peak_mask).sum() / batch["vpp"]
     bg_excess = torch.relu(pred - bg_floor) * (1.0 - peak_mask)
     bg_drones = bg_excess.sum() / batch["vpp"]
@@ -817,7 +836,8 @@ def run_training(args):
             t1 = time.perf_counter()
             loss, mse, count, in_mass, bg_drones = _make_train_step(
                 model, optimizer, batch, device, args.count_weight,
-                args.pos_weight, args.bg_floor)
+                args.pos_weight, args.bg_floor, args.loss,
+                args.focal_alpha, args.focal_beta)
             if args.device == "mps":
                 torch.mps.synchronize()
             t2 = time.perf_counter()
@@ -920,8 +940,18 @@ def _build_parser():
                    help="Adam learning rate (default: 1e-3; 1e-2 for --overfit)")
     p.add_argument("--pos-weight", type=float, default=POS_WEIGHT_DEFAULT,
                    help="positive-voxel upweight for the sparse-target MSE "
-                        "(target > 0 voxels get this weight, background keeps "
-                        "1.0; see 'LOSS' docstring)")
+                        "(weight = 1 + pos_weight * target; peak core gets "
+                        "~1+pos_weight; see 'LOSS' docstring)")
+    p.add_argument("--loss", default="mse", choices=("mse", "focal"),
+                   help="shape term: 'mse' = weighted MSE (default); 'focal' = "
+                        "CenterNet-style penalty-reduced focal loss (standard "
+                        "fix for sparse-target dilution)")
+    p.add_argument("--focal-alpha", type=float, default=2.0,
+                   help="focal exponent on (1-pred) for positives / pred for "
+                        "negatives")
+    p.add_argument("--focal-beta", type=float, default=4.0,
+                   help="focal exponent on (1-target) downweighting negatives "
+                        "near each Gaussian peak")
     p.add_argument("--count-weight", type=float, default=0.1,
                    help="weight of the count term (in-support mass + background "
                         "excess, each normalised to drones). ACTIVE in --overfit "
