@@ -881,14 +881,16 @@ def _make_report(args, summary, grid_summary, bin_summary, p1, p2, p5,
     L = []
     add = L.append
 
-    add("# T7 Evaluation Sweep — Geometric Baseline (Agent F)")
+    add("# T7 Evaluation Sweep — Geometric Baseline")
     add("")
     add("Frozen pipeline: `detect_blobs` -> `solve_correspondence` (EPIPOLAR_THRESHOLD_PX=3.0) "
         "-> `triangulate_dlt` -> `ml.metrics.evaluate`. Wiring only; every number is produced by "
         "the frozen path. Detection of all 24 views runs ONCE per scene and is cached; "
         "correspondence+triangulation+metrics are re-run per (composition, view count) cell on the "
         "cached subset (a factorization of `ml.baseline_adapter.process_scene`, verified on a "
-        "couple of cells against the adapter's per-scene output).")
+        "couple of cells against the adapter's per-scene output). This run uses the FULL test "
+        "split (500 primary + 500 secondary scenes, the whole test set), scaling F's 100/cell "
+        "sized grid ~5x.")
     add("")
     add("## Sized grid")
     add("")
