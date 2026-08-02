@@ -14,13 +14,18 @@ LOSS (batch size 1; a "step" is one scene with a random view subset)
                 g(p) = exp(-||C - p||^2 / (2 sigma^2)),  sigma = 1.5 * cell
                 cell = 2 * radius_m / 64,  C = voxel-cell centres
                 (contract §3.3 affine map; reference tests/test_predictions_ml.py)
-    w         = pos_weight where target > 0 else 1.0   # positive-voxel upweight
+    w         = 1 + pos_weight * target                 # target-proportional weight
     mse       = mean(w * (pred - target)^2)             # contract §3.5
-                # sparse-target dilution fix: the 64^3 target has positive
-                # support well under 1%, so plain MSE makes a flat near-zero
+                # sparse-target dilution fix: the 64^3 target's meaningful
+                # support is well under 1%, so plain MSE makes a flat near-zero
                 # output a strong local optimum (mean(target^2) ~= 0.002, below
-                # the OLD 0.05 gate — the G2 false-pass). ~500x upweight on the
-                # positive voxels restores a real shape gradient there.
+                # the OLD 0.05 gate — the G2 false-pass). Weight is proportional
+                # to the target value, NOT thresholded at target > 0: float64
+                # Gaussians never underflow across a swarm-diameter box, so
+                # target > 0 is ~63% of the grid, and upweighting that would put
+                # a spurious DOWNWARD force on the tail voxels surrounding the
+                # peaks (measured: in_mass stuck at ~25% of n_drones). The peak
+                # core (target ~ 1) gets ~1+pos_weight, the tail gets ~1.
     peak_mask = (target > COUNT_MASK_T)              # 0/1 spatial support of the
                 # drones' Gaussians (a constant per scene, no gradient through it)
     in_mass   = (pred * peak_mask).sum() / vpp       # peak-support mass ("drones")
@@ -594,9 +599,14 @@ def _make_train_step(model, optimizer, batch, device, count_weight, pos_weight):
     optimizer.zero_grad(set_to_none=True)
     pred = model.forward_volume(views, batch["cameras"], batch["grid"])[0, 0]
     # Sparse-target dilution fix (see module "LOSS" docstring): upweight the
-    # positive-voxel support (~<1% of the 64^3 grid) so a flat near-zero output
-    # is no longer a local optimum. Background voxels keep weight 1.
-    w = torch.where(target > 0.0, pos_weight, 1.0)
+    # drone-support voxels so a flat near-zero output is no longer a local
+    # optimum. The weight is PROPORTIONAL to the target value (w = 1 +
+    # pos_weight * target): the peak core (target ~ 1) gets ~1+pos_weight, the
+    # Gaussian shoulder a smaller upweight, and voxels where the float64
+    # Gaussian tail has merely not underflowed to zero (target ~ 1e-300; ~63%
+    # of the 64^3 grid — NOT the sparse support) get weight ~ 1 and no spurious
+    # downward force on the region surrounding the peaks.
+    w = 1.0 + pos_weight * target
     mse = ((pred - target).square() * w).mean()
     in_mass = (pred * peak_mask).sum() / batch["vpp"]
     bg_excess = torch.relu(pred - COUNT_FLOOR) * (1.0 - peak_mask)
@@ -772,6 +782,8 @@ def run_training(args):
         "seed": args.seed,
         "lr": args.lr,
         "count_weight": args.count_weight,
+        "pos_weight": args.pos_weight,
+        "target_sigma_cells": TARGET_SIGMA_CELLS,
         "total_steps": total_steps,
         "epoch_len": epoch_len,
     }
