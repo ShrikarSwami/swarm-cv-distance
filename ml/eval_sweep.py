@@ -159,32 +159,60 @@ def select_scenes(root: str, scenes_per_cell: int,
 
     The operating-cell split is by seed RANGE (spec T2: test 0-499 primary,
     500-999 secondary); the cell is read from the data, never inferred.
+
+    FULL test-split coverage: when a cell's in-bin pool is smaller than
+    scenes_per_cell (the test split has only ~348 primary / ~326 secondary
+    seeds inside the density bins, so 500/cell cannot be filled from bins
+    alone), the cell is topped up with its remaining seeds in seed order.
+    Density-binned rows keep their bin; out-of-bin rows get density_bin None
+    and are excluded from per-bin tables but included in the per-cell curves
+    (the full test set).
     """
     targets = _bin_targets(scenes_per_cell)
     sel = {c: {b: [] for b in BIN_NAMES} for c in cells}
     n_drones_cache = {}
     cell_cache = {}
-    for seed in range(1000):
+
+    def _meta(seed: int) -> tuple:
         if seed not in n_drones_cache:
             sd = scene_dir_for_seed(root, seed)
             with open(os.path.join(sd, "ground_truth.json")) as f:
                 n_drones_cache[seed] = int(json.load(f)["n_drones"])
             with open(os.path.join(sd, "cameras.json")) as f:
                 cell_cache[seed] = str(json.load(f).get("cell", "?"))
-        cell = cell_cache[seed]
+        return cell_cache[seed], n_drones_cache[seed]
+
+    # Pass 1: density-bin targets (the sized grid). Identical to the original
+    # sized-grid selection whenever the bins CAN be filled.
+    for seed in range(1000):
+        cell, nd = _meta(seed)
         if cell not in cells:
             continue
-        b = density_bin_of(n_drones_cache[seed])
+        b = density_bin_of(nd)
         if b is None:
             continue
         if len(sel[cell][b]) < targets[b]:
             sel[cell][b].append(seed)
         if all(len(sel[c][b]) >= targets[b] for c in cells for b in BIN_NAMES):
             break
+
+    # Pass 2: full test-split top-up. Fill each cell to scenes_per_cell with
+    # any remaining seed of that cell (out-of-bin scenes get density_bin None).
+    selected = {c: {s for b in BIN_NAMES for s in sel[c][b]} for c in cells}
+    for seed in range(1000):
+        if all(len(selected[c]) >= scenes_per_cell for c in cells):
+            break
+        cell, _nd = _meta(seed)
+        if cell not in cells or seed in selected[cell]:
+            continue
+        if len(selected[cell]) < scenes_per_cell:
+            sel[cell].setdefault(None, []).append(seed)
+            selected[cell].add(seed)
+
     plan = []
     for c in cells:
-        for b in BIN_NAMES:
-            for s in sel[c][b]:
+        for b in list(BIN_NAMES) + [None]:
+            for s in sel[c].get(b, []):
                 plan.append((s, c, b))
     # Guard: exactly scenes_per_cell per cell.
     per_cell = {}
@@ -868,7 +896,12 @@ def _make_report(args, summary, grid_summary, bin_summary, p1, p2, p5,
         (summary["config"]["scenes_per_cell"],
          summary["config"]["n_scenes"], summary["config"]["cells"]))
     add("- density bins: low [5,15] (~10), mid [28,42] (~35), high [48,60] (~55, straddles the "
-        "~50-drone false-track threshold); balanced ~33/34/33 per cell per bin")
+        "~50-drone false-track threshold); target mix %s per cell per bin" %
+        json.dumps(_bin_targets(int(summary["config"].get("scenes_per_cell") or 0))))
+    add("- FULL test-split coverage: at scenes_per_cell >= the cell's in-bin pool, each cell is "
+        "topped up to scenes_per_cell with its remaining seeds (density_bin None for out-of-bin "
+        "scenes). Per-cell curves average over the FULL test set; per-bin tables cover only the "
+        "in-bin subset.")
     add("- view counts: %s" % view_counts)
     add("- compositions: %s" % ", ".join(comp_names))
     add("- compositions (ordered camera lists): `%s`" % json.dumps(
