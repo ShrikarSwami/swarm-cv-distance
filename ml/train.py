@@ -519,8 +519,10 @@ def resolve_scenes(args, splits):
 
 
 # ---------------------------------------------------------------------------
-# Checkpointing
+# Checkpointing — run-scoped paths: checkpoints/<tag>/run_<N>/latest.pt
 # ---------------------------------------------------------------------------
+# NEVER save to a shared latest.pt.  Each run gets its own numbered directory
+# so that unrecoverable overwrites (like the 0.985m G2 run) cannot repeat.
 
 
 def _save_checkpoint(path, model, optimizer, sampler, global_step, epoch, cfg):
@@ -547,6 +549,58 @@ def _load_checkpoint(path):
     # (np_rng / sampler_rng_state) that weights_only=True rejects. The file is
     # self-produced by this module (trusted), not an untrusted artifact.
     return torch.load(path, map_location="cpu", weights_only=False)
+
+
+def _resolve_run_dir(checkpoint_dir, tag, resume):
+    """Return (run_dir, run_num) for the checkpoint path.
+
+    Layout: ``<checkpoint_dir>/<tag>/run_<N>/`` where N auto-increments.
+
+    On ``resume`` the highest existing run_N is returned (its latest.pt is
+    loaded).  On a fresh run the next integer is chosen (N = max + 1, or 1 if
+    no runs exist yet).  The run directory is created only on save (not here),
+    so a dry-run / estimate step never leaves empty dirs behind.
+    """
+    tag_dir = os.path.join(checkpoint_dir, tag)
+    os.makedirs(tag_dir, exist_ok=True)
+
+    # Find existing run_<N> directories.
+    existing_runs = []
+    for entry in os.scandir(tag_dir):
+        if entry.is_dir() and entry.name.startswith("run_"):
+            try:
+                n = int(entry.name[4:])
+                existing_runs.append(n)
+            except ValueError:
+                pass
+
+    if resume:
+        if not existing_runs:
+            raise FileNotFoundError(
+                "no run directories found for tag %r in %s; "
+                "cannot resume" % (tag, tag_dir))
+        run_num = max(existing_runs)
+    else:
+        run_num = max(existing_runs, default=0) + 1
+
+    run_dir = os.path.join(tag_dir, "run_%d" % run_num)
+    return run_dir, run_num
+
+
+def _auto_tag(args):
+    """Derive a checkpoint tag from training config if not explicitly given."""
+    parts = []
+    if args.overfit:
+        parts.append("overfit")
+    parts.append(args.loss)
+    if args.pos_weight != POS_WEIGHT_DEFAULT:
+        parts.append("pw%s" % args.pos_weight)
+    if args.count_weight != 0.1:
+        parts.append("cw%s" % args.count_weight)
+    if args.target_sigma != TARGET_SIGMA_CELLS:
+        parts.append("s%s" % args.target_sigma)
+    parts.append("v%d-%d" % (args.min_views, args.max_views))
+    return "_".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -773,8 +827,16 @@ def run_training(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     start_step = 0
     sampler_rng_state = None
-    ckpt_path = os.path.join(args.checkpoint_dir, "latest.pt") \
-        if args.checkpoint_dir else None
+
+    # --- run-scoped checkpoint path: checkpoints/<tag>/run_<N>/latest.pt ---
+    if args.checkpoint_dir:
+        tag = args.tag or _auto_tag(args)
+        run_dir, run_num = _resolve_run_dir(
+            args.checkpoint_dir, tag, args.resume)
+        ckpt_path = os.path.join(run_dir, "latest.pt")
+    else:
+        tag = None
+        ckpt_path = None
 
     if args.resume:
         if not ckpt_path:
@@ -818,6 +880,8 @@ def run_training(args):
         "target_sigma_cells": args.target_sigma,
         "total_steps": total_steps,
         "epoch_len": epoch_len,
+        "tag": tag,
+        "run_num": run_num if tag else None,
     }
 
     losses = []
@@ -930,10 +994,17 @@ def _build_parser():
     p.add_argument("--max-steps", type=int, default=None,
                    help="training budget in steps (takes precedence over --epochs)")
     p.add_argument("--checkpoint-dir", default=None,
-                   help="dir for latest.pt checkpoints (default: none for "
-                        "smoke/bench; checkpoints/ for training)")
+                   help="base dir for checkpoints (default: none for "
+                        "smoke/bench; checkpoints/ for training). Runs are "
+                        "saved under <dir>/<tag>/run_<N>/latest.pt to prevent "
+                        "unrecoverable overwrites.")
+    p.add_argument("--tag", default=None,
+                   help="checkpoint experiment tag (default: auto-derived from "
+                        "loss/pos_weight/target_sigma config). Each tag gets "
+                        "its own numbered run directories.")
     p.add_argument("--resume", action="store_true",
-                   help="resume from --checkpoint-dir/latest.pt")
+                   help="resume from the latest run_<N> of the tag in "
+                        "--checkpoint-dir/<tag>/")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="mps", choices=("mps", "cpu"))
     p.add_argument("--min-views", type=int, default=2)
