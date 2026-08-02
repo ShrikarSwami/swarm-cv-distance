@@ -116,6 +116,15 @@ def split_for_seed(seed: int) -> str:
     raise ValueError("seed must be non-negative, got %d" % seed)
 
 
+def cell_for_seed(seed: int) -> str:
+    """Deterministic per-seed cell assignment: even -> primary, odd -> secondary.
+
+    Balances the campaign ~50/50 across the two operating cells and is stable
+    across resume (same seed -> same cell -> identical scene, forever).
+    """
+    return "primary" if int(seed) % 2 == 0 else "secondary"
+
+
 # ---------------------------------------------------------------------------
 # Geometry helpers
 # ---------------------------------------------------------------------------
@@ -215,16 +224,19 @@ def _build_cameras(rng, center, standoff_m):
 # ---------------------------------------------------------------------------
 
 
-def generate_scene(seed: int, cell="primary", n_drones=None, min_spacing_m=DEFAULT_MIN_SPACING_M,
+def generate_scene(seed: int, cell=None, n_drones=None, min_spacing_m=DEFAULT_MIN_SPACING_M,
                    centroid_altitude_m=None):
     """Deterministically generate one scene for the given seed and operating cell.
 
     Returns the scene dict (never writes to disk). Same seed + cell -> identical
-    scene, forever. `n_drones` overrides the random N in [5, 60] (used for the
-    pilot's fixed-density measurement; the campaign uses random N).
+    scene, forever. `cell` defaults to `cell_for_seed(seed)` (campaign default).
+    `n_drones` overrides the random N in [5, 60] (used for the pilot's
+    fixed-density measurement; the campaign uses random N).
     """
     if seed < 0:
         raise ValueError("seed must be non-negative, got %d" % seed)
+    if cell is None:
+        cell = cell_for_seed(seed)
     if isinstance(cell, str):
         if cell not in OPERATING_CELLS:
             raise ValueError("unknown cell %r (choose %s)"
@@ -395,11 +407,9 @@ def _write_json_atomic(path, payload):
     os.replace(tmp, path)
 
 
-def write_scene(root, scene):
-    """Write ground_truth.json + cameras.json for a scene dict. Returns the dir."""
-    d = scene_dir(root, scene["scene_id"])
-    os.makedirs(d, exist_ok=True)
-
+def serialize_scene(scene):
+    """Return (ground_truth_dict, cameras_dict) for a scene (shared by writer
+    and render harness so both write byte-identical JSON)."""
     gt = {k: scene[k] for k in (
         "schema_version", "scene_id", "seed", "split", "cell", "radius_m",
         "swarm_center", "n_drones", "min_inter_drone_spacing_m",
@@ -412,7 +422,14 @@ def write_scene(root, scene):
         "standoff_m", "a_max_px", "focal_px", "image_size_px", "n_views",
         "swarm_center", "generated_by")}
     cam["views"] = scene["cameras"]
+    return gt, cam
 
+
+def write_scene(root, scene):
+    """Write ground_truth.json + cameras.json for a scene dict. Returns the dir."""
+    d = scene_dir(root, scene["scene_id"])
+    os.makedirs(d, exist_ok=True)
+    gt, cam = serialize_scene(scene)
     _write_json_atomic(os.path.join(d, "ground_truth.json"), gt)
     _write_json_atomic(os.path.join(d, "cameras.json"), cam)
     return d

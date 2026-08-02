@@ -417,6 +417,34 @@ G4 is the equivalent of the geometric track's `phase2 >= phase1 * 0.9` check. A
 learned model beating well-conditioned triangulation under near-perfect detection
 at low density is a bug signal, not a win.
 
+### Gate status (Session 15e, 2026-08-02)
+
+**G2 — NOT PASSED; ML TRACK PAUSED (documented negative result).** The overfit gate
+fails and the cause is structural, not a bug.
+
+- Best checkpoint (600 steps, weighted MSE `pos_weight=500`, `target_sigma=2.0`):
+  aggregate median_err 1.0196 m, count error +241..+354 (gate requires per-scene
+  count_err in [-1,+1]).
+- **Structural cause:** at encoder stride 8 with a_max ~10 px/drone, each drone
+  occupies ~1.2 feature pixels, so the encoder cannot produce a peak narrower than
+  its receptive field. PATCH 5 set stride <= 8 as a floor; the model is at the floor.
+- **Measured evidence (Agent H, `ml/extract_debug.py`, orchestrator-run
+  `/tmp/extract_debug_acceptance.txt`):** the model learned POSITION but not
+  SHARPNESS. Absolute-threshold sweep from 1e-3*max to 0.7*max removes zero peaks
+  (count error stays +241..+354 through 0.5*max); true-drone-location voxels sit at
+  2.4:1 over background and 98.3% exceed 0.5*pred_max; but 1,012 local maxima share
+  the same value band as 231 true drones — no threshold separates them. The diffuse
+  field is a genuine architecture limit, not an extraction defect.
+- **Do not attempt further fixes in V1.** Cost is unbounded (76 min/epoch; five loss
+  variants already tried without a clean long run) and the comparison it would enable
+  is saturated (baseline mAP 0.98, detector recall 0.985-1.000; G4 says a low-density
+  win is a leak signal anyway).
+- **Named path forward (NOT ATTEMPTED IN V1):** higher feature resolution — stride <= 4,
+  dilated convolutions, or an FPN-style upsampling head — plus multi-hour training runs.
+
+**G4 — NOT ATTEMPTED IN V1.** Depends on the ML track, which is not attempted in V1
+(see G2 above). Marked NOT ATTEMPTED, not passed; do not present it as untried.
+
 ## 10. Execution model
 
 ### Orchestrator and subagents
