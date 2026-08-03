@@ -586,8 +586,10 @@ def _summarize_group(rows):
                                (isinstance(r["median_err_m"], float) and math.isnan(r["median_err_m"]))))),
         "mAP_mean": float(np.mean(maps)) if maps else float("nan"),
         "mAP_median": float(np.median(maps)) if maps else float("nan"),
+        "mAP_std": float(np.std(maps)) if maps else float("nan"),
         "median_err_m_mean": float(np.mean(meds)) if meds else float("nan"),
         "median_err_m_median": float(np.median(meds)) if meds else float("nan"),
+        "median_err_m_std": float(np.std(meds)) if meds else float("nan"),
         "chamfer_m_mean": float(np.mean(chams)) if chams else float("nan"),
         "count_err_mean": _mean([r["count_err"] for r in rows]),
         "n_tracks_mean": _mean([r["n_tracks"] for r in rows]),
@@ -714,7 +716,9 @@ def analyze(args) -> int:
                 s = grid_summary.get("%s|%s|%d" % (cell, comp, vc))
                 series.append({"view_count": vc,
                                "mAP_mean": s["mAP_mean"] if s else float("nan"),
+                               "mAP_std": s["mAP_std"] if s else float("nan"),
                                "median_err_m_mean": s["median_err_m_mean"] if s else float("nan"),
+                               "median_err_m_std": s["median_err_m_std"] if s else float("nan"),
                                "count_err_mean": s["count_err_mean"] if s else float("nan"),
                                "n_empty": s["n_empty"] if s else 0})
             # knee = view count where the largest mAP improvement occurs
@@ -818,15 +822,17 @@ def _make_plots(args, cells, comp_names, view_counts, grid_summary) -> None:
         axes = [axes]
     for ax, cell in zip(axes, cells):
         for comp in comp_names:
-            xs, ys = [], []
+            xs, ys, yerr = [], [], []
             for vc in view_counts:
                 s = grid_summary.get("%s|%s|%d" % (cell, comp, vc))
                 if s is None:
                     continue
                 xs.append(vc)
                 ys.append(s["mAP_mean"])
-            ax.plot(xs, ys, marker=markers.get(comp, "o"), color=colors.get(comp),
-                    label=comp)
+                yerr.append(s.get("mAP_std", float("nan")))
+            # per-cell error bars = std over the cell's scenes at that (comp, vc)
+            ax.errorbar(xs, ys, yerr=yerr, marker=markers.get(comp, "o"),
+                        color=colors.get(comp), label=comp, capsize=3, ls="-")
         _frame(ax, cell)
     axes[0].set_ylabel("mAP (mean over taus 0.5/1/2/5 m)")
     fig.suptitle("Geometric baseline — mAP vs view count, one curve per tier composition", fontsize=11)
@@ -840,15 +846,16 @@ def _make_plots(args, cells, comp_names, view_counts, grid_summary) -> None:
         axes = [axes]
     for ax, cell in zip(axes, cells):
         for comp in comp_names:
-            xs, ys = [], []
+            xs, ys, yerr = [], [], []
             for vc in view_counts:
                 s = grid_summary.get("%s|%s|%d" % (cell, comp, vc))
                 if s is None:
                     continue
                 xs.append(vc)
                 ys.append(s["median_err_m_mean"])
-            ax.plot(xs, ys, marker=markers.get(comp, "o"), color=colors.get(comp),
-                    label=comp)
+                yerr.append(s.get("median_err_m_std", float("nan")))
+            ax.errorbar(xs, ys, yerr=yerr, marker=markers.get(comp, "o"),
+                        color=colors.get(comp), label=comp, capsize=3, ls="-")
         _frame(ax, cell)
     axes[0].set_ylabel("median matched position error (m)")
     fig.suptitle("Geometric baseline — median position error vs view count, one curve per tier composition",
@@ -932,6 +939,19 @@ def _make_report(args, summary, grid_summary, bin_summary, p1, p2, p5,
                     (cell, b, vc, _fmt(d["delta_mean"]), d["n_intersection"],
                      _fmt(de["delta_mean"])))
     add("")
+    add("P1 per-cell error bars (std over the intersection set):")
+    add("")
+    add("| cell | density | view_count | delta mAP std | delta median err std (m) |")
+    add("|---|---|---|---|---|")
+    for cell in cells:
+        for b in ("low", "mid", "high"):
+            for vc in view_counts:
+                d = p1[cell][b][vc]["delta_mAP"]
+                de = p1[cell][b][vc]["delta_median_err"]
+                add("| %s | %s | %d | %s | %s |" %
+                    (cell, b, vc, _fmt(d.get("delta_std")),
+                     _fmt(de.get("delta_std"))))
+    add("")
     add("P1 verdict: **predicted** mixed >= ground at equal view count, gap increasing with density. "
         "**observed** — see table. **ratio** = mean delta mAP at V=8 per cell: "
         + "; ".join("%s %s" % (c, _fmt(p1[c]["high"][view_counts[-1]]["delta_mAP"]["delta_mean"]))
@@ -964,6 +984,29 @@ def _make_report(args, summary, grid_summary, bin_summary, p1, p2, p5,
         "**ratio** = mAP(V=8)/mAP(V=2) per composition, see curves. **match** = " +
         _verdict(p2_match(p2)) + ".")
     add("")
+    add("P2 per-cell error bars (std over the cell's scenes at that composition and view count):")
+    add("")
+    for cell in cells:
+        add("**%s — mAP std**" % cell)
+        add("")
+        add("| composition | V=2 | V=3 | V=4 | V=5 | V=6 | V=7 | V=8 |")
+        add("|---|---|---|---|---|---|---|---|")
+        for comp in comp_names:
+            row = "| %s |" % comp
+            for pt in p2[cell][comp]["series"]:
+                row += " %s |" % _fmt(pt["mAP_std"])
+            add(row)
+        add("")
+        add("**%s — median err std (m)**" % cell)
+        add("")
+        add("| composition | V=2 | V=3 | V=4 | V=5 | V=6 | V=7 | V=8 |")
+        add("|---|---|---|---|---|---|---|---|")
+        for comp in comp_names:
+            row = "| %s |" % comp
+            for pt in p2[cell][comp]["series"]:
+                row += " %s |" % _fmt(pt["median_err_m_std"])
+            add(row)
+        add("")
 
     # ---- P5 ----
     add("## P5 — count error grows monotonically with density")
