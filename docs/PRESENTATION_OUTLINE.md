@@ -1,7 +1,8 @@
 # Presentation Outline — Camera-Based Drone Swarm Reconstruction
 
 > **For Chief Scientist review.** Slide-level outline, not prose. Every number
-> traceable to `logs/ml_sweep/` (full test set: 1000 scenes, 29000 rows).
+> traceable to `logs/ml_sweep/` (full test set: 1000 scenes, 29000 rows) or
+> `logs/adjacency/` (200 scenes, 6 d_max values).
 
 ---
 
@@ -28,28 +29,35 @@ as a drop-in for the GA/PSO code — without simulation access.
 ## Slide 3 — Method (pipeline diagram)
 
 ```
-Multi-camera renders (24 cameras, dome rig)
-        │
-        ▼
-  detect_blobs          ← blob detector on plain-background renders
-        │
-        ▼
-  solve_correspondence   ← epipolar geometry (±3 px threshold)
-        │
-        ▼
-  triangulate_dlt       ← Direct Linear Transform on matched multi-view detections
-        │
-        ▼
-  pairwise distances    ← Hungarian matching against ground truth
-        │
-        ▼
-  mAP@tau / median position error / adjacency accuracy
+┌─────────────────────── PIPELINE (anonymous detections only) ──────────────────────┐
+│                                                                                   │
+│  Multi-camera renders (24 cameras, dome rig)                                     │
+│          │                                                                        │
+│          ▼                                                                        │
+│    detect_blobs          ← blob detector on rendered PNGs (same pixels a         │
+│          │                  real detector would see)                              │
+│          ▼                                                                        │
+│    solve_correspondence   ← epipolar geometry (±3 px threshold)                  │
+│          │                  receives ONLY anonymous 2D point sets — no identity   │
+│          ▼                                                                        │
+│    triangulate_dlt       ← Direct Linear Transform → 3D positions               │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+
+                              ═══ EVALUATION ═══
+
+    Hungarian match (scipy) ← align predicted ↔ true drones
+          │
+          ▼
+    Pairwise distances → threshold at d_max → adjacency matrix
+          │
+          ▼
+    mAP@tau / median position error / edge-level P-R-F1
 ```
 
-Frozen pipeline, wiring only. Detection runs on rendered PNGs — the same pixels any
-real detector would see. Ground truth is used for recall scoring and evaluation only,
-never as pipeline input. Metrics through a single frozen `ml/metrics.py` implementation
-built before either track produced numbers.
+Frozen pipeline, wiring only. Detection runs on rendered PNGs. Ground truth is used for
+recall scoring and evaluation only, never as pipeline input. Metrics through a single
+frozen `ml/metrics.py` built before either track produced numbers.
 
 ---
 
@@ -57,12 +65,14 @@ built before either track produced numbers.
 
 | Metric | Value | Condition |
 |---|---|---|
+| Median matched position error | **0.0315 m** | Primary cell, V=8, ground — 3 cm against inter-drone spacing of metres |
 | mAP (avg over tau 0.5/1/2/5 m) | **0.9859** | 500 test scenes, primary cell, V=8, mixed |
-| Median matched position error | **0.0315 m** | Primary cell, V=8, ground |
+| Adjacency F1 (d_max ≥ 25 m) | **0.982** | 200 test scenes, mixed V=8, primary cell |
+| Adjacency recall (all d_max) | **1.000** | Zero false negatives — every true edge found |
 | Reconstruction count accuracy | count_err ≤ +0.75 | Primary V=8 across compositions |
-| Detector recall (24 views) | 0.984–0.998 | Across density bins, scoring-only |
 
-Full test set (1000 scenes). Primary cell: R=50 m, a_max 9.6 px/drone, standoff 139 m.
+Full test set (1000 scenes for position/mAP; 200 scenes for adjacency).
+Primary cell: R=50 m, a_max 9.6 px/drone, standoff 139 m.
 Secondary cell: R=100 m, a_max 4.8 px/drone, standoff 278 m.
 
 ---
@@ -113,8 +123,9 @@ epipolar alignments create phantom drones.
 | Secondary | −0.06 | +0.31 | +1.50 |
 
 Monotonic in both cells (P5 confirmed). At high density the baseline overshoots by
-~1–2 drones — below the ~50-drone false-track threshold that defines the high-density
-bin. This is the regime where learned false-positive rejection would help most.
+~1–2 drones, consistent with the onset predicted by the geometric track's false-track
+formula (the ~50-drone threshold that defines the high-density bin). This is the regime
+where learned false-positive rejection would help most.
 
 ---
 
@@ -156,8 +167,10 @@ field. This is a physics/architecture limit, not a training bug.
 
 1. **Temporal detection** (frame differencing on real multi-camera video) — replaces the
    blob detector; works at <1 px apparent size if the drone moves between frames.
-2. **Correspondence without oracle** — epipolar + temporal consistency matching across
-   anonymous detections (the correspondence debt this work deferred via Blender object IDs).
+2. **Correspondence under realistic detection** — the geometric correspondence solver
+   works on anonymous epipolar constraints under near-perfect detection (0.98–1.00 recall)
+   on plain backgrounds. Its behavior under noisy partial detections, false positives from
+   clutter, and sub-pixel targets is unvalidated.
 3. **Learned false-positive rejection** — the regime where the classical baseline's
    count error grows (high density) is exactly where a small classifier would help.
 4. **Integration with GA/PSO** — the reconstructed adjacency matrix drops directly into
@@ -174,6 +187,7 @@ field. This is a physics/architecture limit, not a training bug.
 | Camera rig | 24 cameras, dome, 24 mm FF equiv, W=1920, f=2666.67 px |
 | Sweep grid | 7 view counts × 4 compositions × 2 cells × ~500 scenes |
 | Sweep wall-clock | 91.9 min (14 parallel jobs) |
+| Adjacency eval | 200 scenes, mixed V=8, 6 d_max values, 69 s |
 | Frozen test suite | 55/55 passing |
-| Primary source | `logs/ml_sweep/eval_sweep_report.md`, `eval_sweep_summary.json` |
-| Plots | `logs/ml_sweep/plot_mAP_vs_views.png`, `plot_median_err_vs_views.png` |
+| Primary sources | `logs/ml_sweep/eval_sweep_report.md`, `logs/adjacency/adjacency_report.md` |
+| Plots | `logs/ml_sweep/plot_mAP_vs_views.png`, `plot_median_err_vs_views.png`, `logs/adjacency/plot_adjacency_vs_dmax.png` |
