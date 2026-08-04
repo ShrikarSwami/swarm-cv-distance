@@ -7,6 +7,14 @@
 #
 # Usage:  caffeinate -dims ./scripts/ml_overnight.sh
 #
+# Pause/resume (control file, same pattern as ml/render_harness.py):
+#   echo PAUSED  > .overnight/control.state
+#   echo RUNNING > .overnight/control.state
+#   echo STOP    > .overnight/control.state
+# The control file is polled at the top of each iteration, never mid-unit.
+# PAUSED waits (paused time does not count against WALL_CLOCK_MAX); STOP ends
+# the run cleanly so the morning summary still prints.
+#
 set -uo pipefail
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -58,7 +66,30 @@ freeze_manifest() {
   } | sort
 }
 
-# ── Exit handling ─────────────────────────────────────────────────────────────
+# ── Tracking / exit summary ───────────────────────────────────────────────────
+# log_summary, on_exit and the trap live ABOVE preflight: any early exit —
+# including a preflight failure — must still write the summary without a
+# "log_summary: command not found" error.
+ITERATIONS_DONE=0
+COMMITS_MADE=0
+EXIT_REASON=""
+START_EPOCH=$(date +%s)
+SUMMARY_LOG="logs/ml-overnight-summary.log"
+TOTAL_PAUSED_SECONDS=0
+PAUSE_START=""
+
+log_summary() {
+  mkdir -p "$(dirname "$SUMMARY_LOG")" 2>/dev/null || true
+  local elapsed=$(( $(date +%s) - START_EPOCH - TOTAL_PAUSED_SECONDS ))
+  {
+    echo "=== $(date '+%Y-%m-%d %H:%M:%S') ==="
+    echo "  iterations:   $ITERATIONS_DONE"
+    echo "  commits:      $COMMITS_MADE"
+    echo "  exit reason:  ${EXIT_REASON:-unknown}"
+    echo "  wall clock:   $((elapsed/60))m$((elapsed%60))s"
+    echo ""
+  } >> "$SUMMARY_LOG" 2>/dev/null || true
+}
 on_exit() { log_summary; }
 trap on_exit EXIT
 
@@ -125,25 +156,12 @@ mkdir -p "$LOG_DIR"
 RUN_LOG="$LOG_DIR/ml-run-$(date +%Y%m%d-%H%M%S).log"
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$RUN_LOG"; }
 
-# ── Tracking ──────────────────────────────────────────────────────────────────
-ITERATIONS_DONE=0
-COMMITS_MADE=0
-EXIT_REASON=""
-START_EPOCH=$(date +%s)
-SUMMARY_LOG="logs/ml-overnight-summary.log"
-
-log_summary() {
-  mkdir -p "$(dirname "$SUMMARY_LOG")" 2>/dev/null || true
-  local elapsed=$(( $(date +%s) - START_EPOCH ))
-  {
-    echo "=== $(date '+%Y-%m-%d %H:%M:%S') ==="
-    echo "  iterations:   $ITERATIONS_DONE"
-    echo "  commits:      $COMMITS_MADE"
-    echo "  exit reason:  ${EXIT_REASON:-unknown}"
-    echo "  wall clock:   $((elapsed/60))m$((elapsed%60))s"
-    echo ""
-  } >> "$SUMMARY_LOG" 2>/dev/null || true
-}
+# ── Pause/resume control file ────────────────────────────────────────────────
+# Same pattern as ml/render_harness.py. Polled at the top of each iteration.
+CONTROL_FILE="$LOG_DIR/control.state"
+if [ ! -f "$CONTROL_FILE" ]; then
+  echo "RUNNING" > "$CONTROL_FILE"
+fi
 
 log "on branch $current_branch"
 START_COMMIT=$(git rev-parse --short HEAD)
@@ -155,7 +173,45 @@ log "frozen baseline: $(echo "$FROZEN_BASELINE" | wc -l | tr -d ' ') files check
 fails=0
 LAST_HEAD=$(git rev-parse HEAD)
 
+# ── Pause/resume: polled at the TOP of each iteration, never mid-unit ────────
+# PAUSED sleeps 30s and re-polls (resuming needs no re-preflight); STOP breaks
+# the loop so the morning summary still prints. Paused seconds accumulate in
+# TOTAL_PAUSED_SECONDS and are subtracted from the wall-clock budget.
+poll_control() {
+  while true; do
+    state=$(cat "$CONTROL_FILE" 2>/dev/null | tr -d '[:space:]' || echo RUNNING)
+    case "$state" in
+      PAUSED)
+        if [ -z "$PAUSE_START" ]; then
+          PAUSE_START=$(date +%s)
+          log "control file PAUSED — pausing (polling every 30s)"
+        fi
+        sleep 30
+        ;;
+      STOP)
+        EXIT_REASON="stopped via control file"
+        log "control file STOP — ending run"
+        return 1
+        ;;
+      *)
+        if [ -n "$PAUSE_START" ]; then
+          local paused=$(( $(date +%s) - PAUSE_START ))
+          TOTAL_PAUSED_SECONDS=$(( TOTAL_PAUSED_SECONDS + paused ))
+          log "control file RUNNING — resumed after ${paused}s paused (${TOTAL_PAUSED_SECONDS}s total)"
+          PAUSE_START=""
+        fi
+        return 0
+        ;;
+    esac
+  done
+}
+
 for i in $(seq 1 "$MAX_ITER"); do
+
+  # ── Pause/resume control: polled before any stop-check or launch ──────────
+  if ! poll_control; then
+    break
+  fi
 
   # ── Stop conditions ───────────────────────────────────────────────────────
   if grep -q "$SENTINEL" "$PROGRESS_FILE" 2>/dev/null; then
@@ -173,7 +229,7 @@ for i in $(seq 1 "$MAX_ITER"); do
     EXIT_REASON="$fails consecutive failures"; break
   fi
 
-  elapsed=$(( $(date +%s) - START_EPOCH ))
+  elapsed=$(( $(date +%s) - START_EPOCH - TOTAL_PAUSED_SECONDS ))
   if [ "$elapsed" -ge "$WALL_CLOCK_MAX" ]; then
     log "WALL CLOCK LIMIT reached (${elapsed}s)"
     EXIT_REASON="wall clock limit"; break
