@@ -10,3 +10,9 @@ stage2_render/output/
 stage2_detect/output/
 dataset/
 dataset_m3/
+.overnight/
+checkpoints/
+dataset_smoke_test/
+dataset_temporal/
+renders/
+assets/hdris/
