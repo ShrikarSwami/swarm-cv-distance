@@ -64,6 +64,27 @@ voxel resolution, or anything named in GATES.md.
 **Result:**
 ```
 predicted:
+  median_err_m: ~0.8-0.9 m (marginal improvement over 1.02 m baseline;
+              position info is already well-recovered by Hungarian match, so
+              the gain is bounded; not the constraining half)
+  count_err per scene: NOT within [-1,+1]. Down substantially from the
+              +241..+354 baseline (recovering ~30x to reach +/-1 needs the
+              whole diffuse field to collapse, which a 2x receptive-field
+              shrink alone is unlikely to achieve). Predict ~+30..+80 per
+              scene, still failing the per-scene [-1,+1] criterion.
+  peak_to_background: rises above the 2.4:1 baseline to ~3.5-4.5:1.
+              A narrower receptive field lets the decoder concentrate mass
+              on fewer voxels, raising peak voxels while the count term
+              keeps the background down. The gain is tempered because the
+              target is still a sigma-2.0 Gaussian, whose fat shoulder still
+              yields a broad support and hence extra local maxima.
+  verdict: FAILED (likely on the count-error half; median may sneak under
+              1.0 m as it already marginally did at 1.02 m). Honest
+              expectation: the architectural diagnosis is right and this is
+              a real, measurable improvement, but a 2-step encoder alone
+              does not reach G2 — FIX-02 (FPN head) + FIX-03 (tighter
+              target) are the queue's intended follow-ons built on this.
+
 observed:
 median_err_m:
 count_err per scene:
