@@ -71,7 +71,9 @@ All results from the geometric method (multi-view triangulation, no learned mode
 | mAP (avg over tau 0.5/1/2/5 m) | **0.9859** | 500 test scenes, primary cell, V=8, mixed |
 | Adjacency F1 (d_max ≥ 25 m) | **0.982** | 200 test scenes, mixed V=8, primary cell |
 | Adjacency recall (all d_max) | **1.000** | Zero false negatives — every true edge found |
-| Reconstruction count accuracy | count_err ≤ +0.75 | Primary V=8 across compositions |
+| Reconstruction count accuracy | count_err +0.71 to +0.89 | Primary V=8 across compositions |
+
+ERROR NOTE: This outline originally claimed "count_err ≤ +0.75". The correct range from evaluation is +0.71 to +0.89. This was an error in the outline specification, not an ambiguity in the qualifier.
 
 Full test set (1000 scenes for position/mAP; 200 scenes for adjacency).
 Primary cell: R=50 m, a_max 9.6 px/drone, standoff 139 m.

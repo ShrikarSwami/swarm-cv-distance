@@ -1,0 +1,11 @@
+GEOMETRIC BASELINE RESULTS (PRIMARY CELL, V=8, MIXED COMPOSITION)
+======================================================================
+
+Median Position Error: 0.028 m
+mAP@0.5/1/2/5 m: 0.9927
+Adjacency F1 (d_max ≥ 25m): 0.982
+Adjacency Recall (all d_max): 1.000
+Count Accuracy: +0.71 to +0.89
+
+Source: logs/ml_sweep/eval_sweep_results.csv
+Conditions: 500 test scenes, primary cell, V=8, mixed composition

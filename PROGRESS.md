@@ -168,6 +168,8 @@ below is **not discarded** — its validated pieces are the addon's foundation:
       actual triangulation error even at 8px noise (single-to-low-double-digit
       meters), so noise rarely pushes a distance estimate across the
       395m-wide boundary needed to flip an edge.
+
+      **Documented outline error (2026-08-04):** Updated `docs/PRESENTATION_OUTLINE.md` to correct the "count_err" value. The original outline incorrectly stated "count_err ≤ +0.75", but the actual evaluation range is "+0.71 to +0.89". This was an error in the outline specification, not an ambiguity in the qualifier. The correction is noted in the slide text and recorded in this progress tracker.
 - [x] **Tooling** (2026-07-22): double-clickable "Swarm Scanner.app" at
       repo root (minimal unsigned bundle wrapping the dev_load.py launch;
       finds Blender across Steam//Applications/~/Applications, passes extra
