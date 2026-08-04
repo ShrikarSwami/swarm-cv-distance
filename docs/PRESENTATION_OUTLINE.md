@@ -1,4 +1,4 @@
-# Presentation Outline — Camera-Based Drone Swarm Reconstruction
+# Presentation Outline — Geometric Method: Camera-Based Drone Swarm Reconstruction
 
 > **For Chief Scientist review.** Slide-level outline, not prose. Every number
 > traceable to `logs/ml_sweep/` (full test set: 1000 scenes, 29000 rows) or
@@ -10,7 +10,7 @@
 
 **From Pixels to Adjacency: Camera-Based Distance Estimation for Drone Swarm Splitting**
 
-Subtitle: Recovering 3D positions and pairwise connectivity from multi-view imagery
+Subtitle: Geometric method — recovering 3D positions and pairwise connectivity from multi-view imagery
 
 ---
 
@@ -26,7 +26,7 @@ as a drop-in for the GA/PSO code — without simulation access.
 
 ---
 
-## Slide 3 — Method (pipeline diagram)
+## Slide 3 — Method — geometric multi-view triangulation (pipeline diagram)
 
 ```
 ┌─────────────────────── PIPELINE (anonymous detections only) ──────────────────────┐
@@ -61,7 +61,9 @@ frozen `ml/metrics.py` built before either track produced numbers.
 
 ---
 
-## Slide 4 — Headline results
+## Slide 4 — Headline results (geometric baseline)
+
+All results from the geometric method (multi-view triangulation, no learned model).
 
 | Metric | Value | Condition |
 |---|---|---|
@@ -129,6 +131,37 @@ where learned false-positive rejection would help most.
 
 ---
 
+## Slide 7b — Live demo: reconstruction figures
+
+Four figures from the frozen geometric baseline on real TEST-split scenes
+(`logs/figures/`). Every number on a figure is produced by the run that made it;
+all metrics via the frozen `ml/metrics.py`. Source seeds: 63 (30 drones),
+148/103/18 (10/35/55 drones), 243 (55 drones).
+
+**Figure 1 — HERO** (`hero_seed63_v8mixed.png`):
+Three panels: (a) four input renders labelled by camera tier (ground/level/aerial),
+(b) detected blobs overlaid on a ground render, (c) 3D predicted-vs-true overlay
+with this run's metrics printed on it (seed 63, 30 drones, V=8 mixed).
+
+**Figure 2 — View-count progression** (`view_progression_seed63_mixed.png`):
+Same scene (seed 63) at V=2, 3, 5, 8 (mixed composition, 2×2 grid). Median error
+and mAP printed per panel. The V=3 knee is labelled: mAP jumps from 0.862 (V=2)
+to 0.933 (V=3), then gains slow to ~0.01 per additional view.
+
+**Figure 3 — Density progression** (`density_progression_v8_mixed.png`):
+Three scenes at ~10 / ~35 / ~55 drones, all at V=8 mixed. Count error printed
+per panel. At 10 drones: zero phantom tracks (count err 0). At 55 drones:
+4 ghost predictions visible as orange × markers (count err +4). Makes phantom
+tracks visible as density grows.
+
+**Figure 4 — Tier comparison** (`tier_comparison_seed243_v2.png`):
+Same scene (seed 243, 55 drones) at V=2, all-ground vs mixed. The mixed
+composition recovers more drones (53/55 vs 52/55) with a higher mAP (+0.102).
+The +0.083 average delta from the full sweep is a single-scene instance of the
+mixed-over-ground advantage at low view counts.
+
+---
+
 ## Slide 8 — The ML track: built, structural limit found
 
 A voxel-fusion model was trained on the same scenes. It learned drone *positions* but
@@ -191,3 +224,4 @@ field. This is a physics/architecture limit, not a training bug.
 | Frozen test suite | 55/55 passing |
 | Primary sources | `logs/ml_sweep/eval_sweep_report.md`, `logs/adjacency/adjacency_report.md` |
 | Plots | `logs/ml_sweep/plot_mAP_vs_views.png`, `plot_median_err_vs_views.png`, `logs/adjacency/plot_adjacency_vs_dmax.png` |
+| Demo figures | `logs/figures/hero_seed63_v8mixed.png`, `view_progression_seed63_mixed.png`, `density_progression_v8_mixed.png`, `tier_comparison_seed243_v2.png` |

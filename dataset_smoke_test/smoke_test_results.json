@@ -1,0 +1,42 @@
+{
+  "clips": [
+    {
+      "clip": "desert_clear",
+      "status": "ok",
+      "time": 9.57145071029663,
+      "timing": "8.7"
+    },
+    {
+      "clip": "desert_overcast",
+      "status": "ok",
+      "time": 9.315083980560303,
+      "timing": "8.9"
+    },
+    {
+      "clip": "forest_clear",
+      "status": "ok",
+      "time": 9.084450006484985,
+      "timing": "8.6"
+    },
+    {
+      "clip": "forest_hazy",
+      "status": "ok",
+      "time": 10.961128950119019,
+      "timing": "9.1"
+    },
+    {
+      "clip": "city_dusk",
+      "status": "ok",
+      "time": 9.333800077438354,
+      "timing": "8.8"
+    }
+  ],
+  "total_time_s": 48.267826795578,
+  "avg_time_per_clip_s": 9.6535653591156,
+  "extrapolation": {
+    "100_clips_min": 16.089275598525997,
+    "500_clips_min": 80.44637799263,
+    "1000_clips_min": 160.89275598526,
+    "2400_clips_min": 386.142614364624
+  }
+}

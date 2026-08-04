@@ -39,7 +39,7 @@ PRESETS: Dict[str, HDPreset] = {
         asset_id="kloofendal_43d_clear_puresky",  # Actual outdoor clear sky
         sun_azimuth=45.0,
         sun_elevation=60.0,
-        strength=0.15,  # Sweep-confirmed: diff=25.6, center ~217, no clipping
+        strength=0.15,  # Re-verified (2026-07-29) against kloofendal: diff=31.4, BG~187, pillar shadow LEFT ✓
     ),
     "overcast": HDPreset(
         name="overcast",
@@ -53,7 +53,7 @@ PRESETS: Dict[str, HDPreset] = {
         asset_id="belfast_sunset_puresky",  # Actual outdoor sunset sky
         sun_azimuth=90.0,
         sun_elevation=15.0,
-        strength=0.3,  # Sweep-confirmed: diff=31.2, shadow=east (correct for sun_azimuth=90°), center ~187
+        strength=0.15,  # Re-verified (2026-07-29) against belfast_sunset: diff=28.5, BG~188, pillar shadow LEFT ✓
     ),
 }
 

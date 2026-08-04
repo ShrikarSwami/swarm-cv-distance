@@ -432,8 +432,9 @@ def print_metrics(result: dict) -> None:
 
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="T9 reconstruction UI — frozen geometric baseline on "
-                    "rendered ML scenes (~/swarm_ml).")
+        description="Geometric method — multi-view triangulation (no learned "
+                    "model).  Frozen geometric baseline on rendered ML scenes "
+                    "(~/swarm_ml).")
     p.add_argument("--root", default=DEFAULT_ROOT,
                    help="data root with manifest.jsonl + scenes/ (default %s)"
                         % DEFAULT_ROOT)
@@ -493,6 +494,9 @@ def run_recon(args) -> int:
     gt, cam = _load_scene_data(args.root, seed)
     true = np.asarray(gt["positions"], dtype=np.float64)
 
+    print("\n═══ GEOMETRIC METHOD — multi-view triangulation (no learned "
+          "model) ═══")
+    print("")
     print("Scene: " + scene_metadata_line(scene))
     print("Angles: %d views -> %s"
           % (len(view_idxs), _fmt_views(view_idxs, selected_view_angles(cam, view_idxs))))

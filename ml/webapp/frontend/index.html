@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swarm CV Distance - Reconstruction UI</title>
+    <link rel="stylesheet" href="static/styles/main.css">
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat.gui/0.7.7/dat.gui.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Swarm CV Distance - Reconstruction UI</h1>
+            <div id="status">Loading...</div>
+        </header>
+
+        <main>
+            <section id="scene-selector">
+                <h2>Scene Selection</h2>
+                <div id="scene-list">
+                    <div class="loading">Loading scenes...</div>
+                </div>
+            </section>
+
+            <section id="angle-selector" style="display: none;">
+                <h2>Angle Selection</h2>
+                <div id="angle-modes">
+                    <button class="mode-btn" data-mode="exact">Exact Selection</button>
+                    <button class="mode-btn" data-mode="random-n">Random N Views</button>
+                    <button class="mode-btn" data-mode="random-random">Random Random</button>
+                </div>
+                <div id="exact-mode" class="mode-panel" style="display: none;">
+                    <h3>Thumbnail Grid (24 angles)</h3>
+                    <div id="thumbnail-grid" class="thumbnail-container">
+                        <!-- Thumbnails will be populated here -->
+                    </div>
+                    <div class="selection-controls">
+                        <button id="confirm-exact">Confirm Selection</button>
+                        <button id="clear-selection">Clear Selection</button>
+                    </div>
+                </div>
+
+                <div id="random-n-mode" class="mode-panel" style="display: none;">
+                    <h3>Random N Views</h3>
+                    <div class="input-group">
+                        <label for="n-views">Number of views (1-24):</label>
+                        <input type="number" id="n-views" min="1" max="24" value="6">
+                    </div>
+                    <button id="confirm-random-n">Confirm Selection</button>
+                </div>
+
+                <div id="random-random-mode" class="mode-panel" style="display: none;">
+                    <h3>Random Random</h3>
+                    <div class="input-group">
+                        <label for="max-views">Max views (1-24):</label>
+                        <input type="number" id="max-views" min="1" max="24" value="8">
+                    </div>
+                    <button id="confirm-random-random">Confirm Selection</button>
+                </div>
+            </section>
+
+            <section id="reconstruction-view" style="display: none;">
+                <h2>Reconstruction Results</h2>
+                <div class="view-controls">
+                    <button id="toggle-3d">Toggle 3D View</button>
+                    <button id="toggle-labels">Toggle Labels</button>
+                    <div class="d_max-control">
+                        <label for="d-max">Adjacency F1 at d_max (m):</label>
+                        <input type="range" id="d-max" min="10" max="500" value="100" step="10">
+                        <span id="d-max-value">100</span>
+                    </div>
+                </div>
+
+                <div class="visualization-container">
+                    <div id="threejs-container" class="threejs-container">
+                        <!-- Three.js canvas will be inserted here -->
+                    </div>
+                    <div id="metrics-panel" class="metrics-panel">
+                        <h3>Metrics</h3>
+                        <div id="metrics-content">
+                            <div class="loading">Loading metrics...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="scene-info">
+                    <h3>Scene Information</h3>
+                    <div id="scene-metadata">
+                        <!-- Scene metadata will be populated here -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Reconstruction method: geometric (epipolar + DLT)</p>
+            <p id="api-status">API: Disconnected</p>
+        </footer>
+    </div>
+
+    <script type="text/babel" src="src/main.js"></script>
+</body>
+</html>

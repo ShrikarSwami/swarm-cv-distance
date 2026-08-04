@@ -1,0 +1,21 @@
+{
+  "n_frames": 20,
+  "fps": 10,
+  "focal_mm": 24,
+  "sensor_width_mm": 36.0,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "n_views": 12,
+  "standoff_m": 2000,
+  "n_drones": 20,
+  "samples": 32,
+  "clip_name": "desert_overcast",
+  "environment": "desert",
+  "weather": "overcast",
+  "formation": "random_cloud",
+  "camera_arrangement": "dome_6",
+  "seed": 42,
+  "dataset_root": "dataset_smoke_test"
+}

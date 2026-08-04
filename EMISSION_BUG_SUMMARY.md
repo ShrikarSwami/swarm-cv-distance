@@ -90,7 +90,7 @@ Correct rotation is `(math.pi, 0, 0)` to rotate 180° around X axis, making the 
 |--------|-------------|-------------------|-----------|
 | Clear (0.15) | 45° (NE) | LEFT (west-southwest) | LEFT ✓ |
 | Overcast (0.15) | 0° (N) | Toward camera (straight down, no left/right bias) | Straight down ✓ |
-| Dusk (0.3) | 90° (E) | LEFT (west) | LEFT ✓ |
+| Dusk (0.15) | 90° (E) | LEFT (west) | LEFT ✓ |
 
 **Sweep methodology for future preset additions:**
 - Sweep Background.Strength downward from the current default
