@@ -31,9 +31,11 @@ against a camera changes that view's warped volume and hence the fused output.
 The pose-blind control `forward(views)` (cameras=None) sorts views by a content
 fingerprint and pools with no pose warp, remaining order-invariant.
 
-Encoder stride (contract SS3.6, HARD): total stride 8 (three stride-2 stages) —
-within the <= 8 limit that keeps ~1.2 feature pixels per drone at a_max ~9.6px.
-No 4th downsampling stage.
+Encoder stride (contract SS3.6, HARD): total stride 4 (two stride-2 stages) —
+within the <= 8 limit. FIX-01 reduced this from 8->4 so each drone occupies
+~2.4 feature pixels at a_max ~9.6px instead of ~1.2, letting the receptive
+field resolve neighbouring drones instead of merging them into one plateau.
+No 3rd downsampling stage.
 
 Variable view count (contract SS3.2): V in 1..24 handled by the pooling step;
 no architecture change between 2 and 8 views.
@@ -76,12 +78,24 @@ class VoxelFusionModel(torch.nn.Module):
     def __init__(self, feat_channels: int = 64):
         super().__init__()
         self.feat_channels = feat_channels
-        self.stride = 8  # total encoder stride (three stride-2 stages)
+        # FIX-01: encoder stride reduced from 8 -> 4 (two stride-2 stages
+        # instead of three). With a_max ~9.6 px each drone now occupies ~2.4
+        # feature pixels instead of ~1.2, so the encoder receptive field can
+        # resolve neighbouring drones separately instead of merging them into
+        # a single broad plateau (the architectural root cause in the
+        # FIX_QUEUE diagnosis). The back-projection math is stride-agnostic:
+        # `u/self.stride + 0.5` and `wf = 1920/stride` scale together, so the
+        # voxel-to-feature-pixel mapping is unchanged in meaning, only at
+        # twice the resolution. Contract SS3.6 caps total stride at <= 8;
+        # stride 4 sits strictly inside that floor.
+        self.stride = 4  # total encoder stride (two stride-2 stages; FIX-01)
 
         # --- shared-weight 2D encoder (SS4 item 1; stride constraint SS3.6) ---
+        # Two stride-2 stages (-> stride 4) + two stride-1 refinement stages.
+        # Output (V, feat_channels, 270, 480) at 1080x1920 input.
         enc = []
         cin = 3
-        for cout, stride in ((32, 2), (feat_channels, 2), (feat_channels, 2),
+        for cout, stride in ((32, 2), (feat_channels, 2),
                              (feat_channels, 1), (feat_channels, 1)):
             enc.append(torch.nn.Conv2d(cin, cout, kernel_size=3, stride=stride,
                                        padding=1, bias=False))
@@ -129,7 +143,7 @@ class VoxelFusionModel(torch.nn.Module):
                 raise ValueError("got %d views but %d cameras"
                                  % (v, len(cameras)))
 
-        feats = self.encoder(x)  # (V, C, 135, 240)
+        feats = self.encoder(x)  # (V, C, 270, 480) at stride 4 (FIX-01)
 
         if cameras is None:
             fused = self._pool_pose_blind(feats)
