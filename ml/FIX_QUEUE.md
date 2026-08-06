@@ -44,7 +44,7 @@ This queue is ordered accordingly.
 
 ## FIX-01 — Stride-4 encoder
 
-**Status:** IN_PROGRESS
+**Status:** FAILED
 
 Reduce encoder downsampling from 3 stages to 2. Each drone then occupies ~2.4
 feature pixels instead of ~1.2.
@@ -86,10 +86,15 @@ predicted:
               target) are the queue's intended follow-ons built on this.
 
 observed:
-  median_err_m:
-  count_err per scene:
-  peak_to_background:
-  verdict:
+  median_err_m: 1.14 m (mixed8 eval views)
+  count_err per scene: +280, +318, +356, +319, +350, +338, +347
+              (scenes 2000-2007 in seed order; range +280 to +356)
+  peak_to_background: ~3.8:1 (pred_max 0.15, background median ~0.04;
+              comparable to stride-8 2.4:1 — marginal improvement)
+  V24 diagnostic: median_err_m=2.81 m (worse with more views)
+  verdict: FAILED (count error > 1 on all 8 scenes; median > 1.0 m;
+              stride-4 count error essentially IDENTICAL to stride-8
+              baseline [+241..+354])
 ```
 
 ---
