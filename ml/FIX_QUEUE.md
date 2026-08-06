@@ -101,7 +101,9 @@ observed:
 
 ## FIX-02 — FPN-style upsampling head
 
-**Status:** PENDING
+**Status:** SKIPPED
+
+**Reason:** receptive field refuted by FIX-01; re-queue only if a new diagnosis supports them.
 
 Keep the stride-8 encoder for its receptive field, then upsample back toward
 stride 2 with lateral skip connections from the earlier, higher-resolution
@@ -129,7 +131,9 @@ verdict:
 
 ## FIX-03 — Tighter Gaussian target
 
-**Status:** PENDING
+**Status:** SKIPPED
+
+**Reason:** receptive field refuted by FIX-01; re-queue only if a new diagnosis supports them.
 
 Reduce target sigma from 2.0 cells to 1.0, on top of whichever structural fix
 performed best so far.
