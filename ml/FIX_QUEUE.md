@@ -156,6 +156,104 @@ verdict:
 
 ---
 
+## FIX-06 — Rebalance the loss so MSE actually drives training
+
+**Status:** FAILED
+
+The count term dominates the loss by 4-6 orders of magnitude (99.9999% at
+step 0, 98.4% at step 600). MSE -- the only term that puts mass at correct
+voxels -- contributes ~1.6% of the loss at best. The model has been trained
+almost purely to shrink its output globally. Peak-to-background got WORSE with
+training (3.8:1 -> 2.9:1). Final MSE (0.245) is 122x worse than the all-zeros
+baseline (0.0020). This explains every prior failure: weighted MSE, focal loss,
+sigma changes and threshold sweeps were all tuning a term with no gradient
+influence.
+
+This supersedes the refuted receptive-field diagnosis in the queue header.
+
+Options:
+- Normalize the count term (per-drone, or relative rather than absolute mass
+  difference) so its magnitude is O(1)
+- Set count_weight so the two terms contribute comparably at init
+- Drop the count term entirely for a control run and rely on weighted MSE
+
+**Control FIRST** (count_weight=0, 600 steps, same overfit scenes): isolates
+whether MSE alone forms peaks. Cheapest informative run available.
+
+NECESSARY CONDITION: final MSE must be BELOW the all-zeros baseline of 0.0020.
+A model with MSE above that is worse than emitting nothing and cannot be
+forming correct peaks, whatever the count error says.
+
+Log the loss decomposition (MSE term and weighted count term separately) at
+step 0 and at the end of every run. This failure was invisible for five fix
+attempts because only the total was recorded.
+
+**Predict before running.**
+
+**Result:**
+```
+predicted:
+  Count term dominates by 4-6 orders of magnitude. count_weight=0 will
+  isolate MSE. MSE alone should form peaks if the architecture can; if it
+  can't, the architecture is the bottleneck after all. Key test: final MSE
+  MUST be below the all-zeros baseline (0.0020) as a necessary condition.
+
+observed (2026-08-06, Session 19):
+  loss decomposition:
+    step 0:   total=0.672923  mse=0.672923  count_weighted=0.0  (count_raw=8,670,914)
+    step 600: total=0.177746  mse=0.177746  count_weighted=0.0  (count_raw=512.94)
+  median_err_m: 0.5808 m (PASSES < 1.0 m)
+  count_err per scene: +474, +478, +451, +455, +459, +479, +484, +485
+              (range +451 to +485; extraction hard cap at 512 peaks)
+  peak_to_background: 15.8 : 1 (pred_max 0.804, background mean 0.051)
+  MSE final: 0.177746
+  MSE < 0.0020?: NO — 88× above the all-zeros baseline
+  verdict: FAILED (count error still hits 512-peak cap; MSE fails necessary
+           condition. The count term WAS crushing the model — removing it
+           improved position error from 1.14 m → 0.58 m and PTB from 2.9:1
+           → 15.8:1. But the background floor at 0.051 creates hundreds of
+           spurious local maxima. The model needs BOTH: a properly weighted
+           count/suppression term AND an MSE term that isn't overwhelmed.
+           Next step: FIX-07 with a rebalanced, normalized count term.)
+```
+
+---
+
+## FIX-07 — Rebalanced count term (normalized per-drone)
+
+**Status:** PENDING
+
+FIX-06 proved that the count term was smothering the MSE gradient, but removing
+it entirely produced a noisy output with 484-512 spurious peaks (15.8:1 PTB
+but useless for counting). The count term IS necessary — it just needs to be
+the same order of magnitude as the MSE term, not 4-6 orders larger.
+
+Approach: normalize the count term per-drone so it measures fractional error
+rather than absolute mass difference:
+- in_mass_err = (in_mass / n_drones - 1.0)²  →  O(1) when mass is in the
+  right ballpark
+- bg_drones_err = (bg_excess.sum() / vpp / n_drones)²  →  also O(1)
+- count = in_mass_err + COUNT_BG_WEIGHT * bg_drones_err
+
+This puts both MSE and count in the [0, 1] range. Set count_weight so the two
+are comparable at init (roughly 1:1). Keep pos_weight=500, sigma=2.0 cells.
+
+**Predict before running.**
+
+**Result:**
+```
+predicted:
+observed:
+median_err_m:
+count_err per scene:
+peak_to_background:
+MSE final:
+MSE < 0.0020?:
+verdict:
+```
+
+---
+
 ## FIX-04 — Longer training at the best configuration
 
 **Status:** PENDING
