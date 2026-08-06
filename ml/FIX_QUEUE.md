@@ -44,7 +44,7 @@ This queue is ordered accordingly.
 
 ## FIX-01 — Stride-4 encoder
 
-**Status:** PENDING
+**Status:** IN_PROGRESS
 
 Reduce encoder downsampling from 3 stages to 2. Each drone then occupies ~2.4
 feature pixels instead of ~1.2.
@@ -86,10 +86,10 @@ predicted:
               target) are the queue's intended follow-ons built on this.
 
 observed:
-median_err_m:
-count_err per scene:
-peak_to_background:
-verdict:
+  median_err_m:
+  count_err per scene:
+  peak_to_background:
+  verdict:
 ```
 
 ---
