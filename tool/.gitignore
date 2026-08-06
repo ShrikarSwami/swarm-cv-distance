@@ -1,0 +1,4 @@
+# Generated output files
+recon_*.png
+*.pyc
+__pycache__/

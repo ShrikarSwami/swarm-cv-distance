@@ -1,0 +1,13 @@
+# Swarm Reconstruction Tool — Dependencies
+#
+# Install:
+#     pip install -r requirements.txt
+#
+# No torch, no Blender, no CUDA required.
+# Pure geometry pipeline runs on any platform (macOS / Linux / Windows).
+
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-image>=0.20.0
+matplotlib>=3.7.0
+Pillow>=9.4.0
